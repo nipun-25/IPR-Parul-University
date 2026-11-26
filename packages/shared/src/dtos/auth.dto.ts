@@ -52,6 +52,42 @@ export interface VerifyEmailResponseDto {
   userId: string;
 }
 
+export const LoginSchema = z.object({
+  email: z
+    .string({ required_error: 'Email is required' })
+    .trim()
+    .toLowerCase()
+    .email('Invalid email address')
+    .refine(
+      (val) => STUDENT_EMAIL_REGEX.test(val),
+      { message: 'Login is restricted strictly to @paruluniversity.ac.in institutional emails' }
+    ),
+  password: z
+    .string({ required_error: 'Password is required' })
+    .min(1, 'Password is required')
+    .max(128, 'Password cannot exceed 128 characters')
+}).strict();
+
+export type LoginDto = z.infer<typeof LoginSchema>;
+
+export interface SessionResponseDto {
+  authenticated: boolean;
+  sessionId: string;
+  expiresAt: string;
+  csrfToken: string;
+  user: {
+    id: string;
+    email: string;
+    fullName: string;
+    activeRoles: PortalRole[];
+  };
+}
+
+export interface LogoutResponseDto {
+  success: boolean;
+  message: string;
+}
+
 export const ResendVerificationEmailSchema = z.object({
   email: z
     .string({ required_error: 'Email is required' })

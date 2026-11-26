@@ -1,13 +1,13 @@
 import { NextRequest } from 'next/server';
 import { BffForwarder } from '@/server/bff-client/bff-forwarder';
-import { MockTestSessionProvider } from '@/server/session/mock-session-provider';
+import { CookieSessionProvider } from '@/server/session/cookie-session-provider';
 
 // Server-side environment configuration (never bundled into browser client code)
 const backendOrigin = process.env.BACKEND_INTERNAL_URL || 'http://localhost:4000';
 const sharedSecretHex = process.env.BFF_SHARED_SECRET || '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 const csrfSecret = process.env.CSRF_SECRET || 'parul_university_ipr_bff_csrf_secret_production_seed_12345';
 
-const sessionProvider = new MockTestSessionProvider();
+const sessionProvider = new CookieSessionProvider(backendOrigin);
 const forwarder = new BffForwarder({
   backendOrigin,
   sharedSecretHex,

@@ -1,13 +1,9 @@
 import { ISessionProvider, BffSession } from './session.interface';
-import { PortalRole } from '@ipr/shared';
 
 /**
- * TEST/MOCK SESSION PROVIDER
- *
- * IMPORTANT SECURITY NOTICE:
- * This provider is for Gate A2 testing, local scaffolding, and automated unit testing only.
- * It is NOT approved for production use. Production will integrate with institutional
- * identity providers (SSO/OAuth2/SAML) and secure HttpOnly cookie session stores.
+ * TEST-ONLY SESSION PROVIDER
+ * For explicit unit test mocking via constructor or setMockSession only.
+ * Does NOT inspect or trust incoming request headers (x-test-session-* removed).
  */
 export class MockTestSessionProvider implements ISessionProvider {
   private activeSession: BffSession | null = null;
@@ -22,8 +18,7 @@ export class MockTestSessionProvider implements ISessionProvider {
     this.activeSession = session;
   }
 
-  public async getSession(request: Request): Promise<BffSession | null> {
-    // If an explicit session was configured in test fixture, use it
+  public async getSession(_request: Request): Promise<BffSession | null> {
     if (this.activeSession) {
       if (this.activeSession.expiresAt.getTime() <= Date.now()) {
         return null;
@@ -31,17 +26,7 @@ export class MockTestSessionProvider implements ISessionProvider {
       return this.activeSession;
     }
 
-    // Allow mock test header for simulated browser client requests in testing
-    const testSessionHeader = request.headers.get('x-test-session-user');
-    if (testSessionHeader) {
-      return {
-        actorId: testSessionHeader,
-        roles: (request.headers.get('x-test-session-roles')?.split(',') as PortalRole[]) || ['Faculty'],
-        sessionId: request.headers.get('x-test-session-id') || 'mock_session_id_123',
-        expiresAt: new Date(Date.now() + 3600 * 1000)
-      };
-    }
-
+    // Reject and never trust client-supplied mock headers
     return null;
   }
 }

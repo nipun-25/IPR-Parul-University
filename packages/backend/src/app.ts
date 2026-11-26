@@ -29,6 +29,7 @@ export interface CreateAppOptions {
   readonly registerRateLimitMax?: number;
   readonly verifyRateLimitMax?: number;
   readonly resendRateLimitMax?: number;
+  readonly loginRateLimitMax?: number;
   readonly csrfRateLimitMax?: number;
   readonly csrfSecret?: string;
   readonly trustProxy?: boolean | string | number | string[];
@@ -197,6 +198,7 @@ export function createApp(env: BackendEnv, options?: CreateAppOptions): Express 
     registerRateLimitMax: options?.registerRateLimitMax ?? (env.NODE_ENV === 'test' ? 1000 : 5),
     verifyRateLimitMax: options?.verifyRateLimitMax ?? (env.NODE_ENV === 'test' ? 1000 : 10),
     resendRateLimitMax: options?.resendRateLimitMax ?? (env.NODE_ENV === 'test' ? 1000 : 5),
+    loginRateLimitMax: options?.loginRateLimitMax ?? (env.NODE_ENV === 'test' ? 1000 : 5),
     csrfRateLimitMax: options?.csrfRateLimitMax ?? (env.NODE_ENV === 'test' ? 1000 : 30),
     csrfSecret,
     isProduction: env.NODE_ENV === 'production'

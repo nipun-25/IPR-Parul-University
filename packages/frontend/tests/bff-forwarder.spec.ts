@@ -1,7 +1,9 @@
+// @vitest-environment node
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { generateCsrfToken } from '@ipr/shared';
 import { BffForwarder } from '../src/server/bff-client/bff-forwarder';
 import { MockTestSessionProvider } from '../src/server/session/mock-session-provider';
+import { CookieSessionProvider } from '../src/server/session/cookie-session-provider';
 
 describe('Next.js BFF Security Boundary & Forwarder (Gate A2)', () => {
   const secretHex = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
@@ -194,5 +196,76 @@ describe('Next.js BFF Security Boundary & Forwarder (Gate A2)', () => {
     const body = await res.json();
     expect(body.code).toBe('BFF_ROUTE_UNAUTHORIZED');
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  describe('Mock Header Rejection & CookieSessionProvider', () => {
+    it('rejects client-supplied mock headers (x-test-session-user and x-test-session-roles) and returns 401', async () => {
+      sessionProvider.setMockSession(null);
+
+      const req = new Request('http://localhost:3000/api/bff/disclosures/ipr-001', {
+        method: 'GET',
+        headers: {
+          'x-test-session-user': 'malicious_impersonated_user',
+          'x-test-session-roles': 'Administrator'
+        }
+      });
+
+      const res = await forwarder.forwardRequest(req, '/disclosures/ipr-001');
+      expect(res.status).toBe(401);
+
+      const body = await res.json();
+      expect(body.code).toBe('UNAUTHENTICATED');
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('proves CookieSessionProvider validates session cookie with backend and rejects spoofed headers', async () => {
+      const validToken = '11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff';
+      const cookieProvider = new CookieSessionProvider('http://localhost:4000', async (token) => {
+        if (token === validToken) {
+          return {
+            actorId: 'auth_user_uuid_from_db',
+            roles: ['Student'],
+            sessionId: 'db_sess_id_123',
+            expiresAt: new Date(Date.now() + 3600 * 1000)
+          };
+        }
+        return null;
+      });
+
+      const cookieForwarder = new BffForwarder({
+        backendOrigin: 'http://localhost:4000',
+        sharedSecretHex: secretHex,
+        csrfSecret,
+        sessionProvider: cookieProvider
+      });
+
+      // 1. Request with valid cookie succeeds and uses DB identity (not mock headers)
+      const validReq = new Request('http://localhost:3000/api/bff/disclosures/ipr-001', {
+        method: 'GET',
+        headers: {
+          'Cookie': `ipr_session=${validToken}`,
+          'x-test-session-user': 'spoofed_user',
+          'x-test-session-roles': 'Administrator'
+        }
+      });
+
+      const validRes = await cookieForwarder.forwardRequest(validReq, '/disclosures/ipr-001');
+      expect(validRes.status).toBe(200);
+
+      const [, calledInit] = fetchMock.mock.calls[0];
+      expect(calledInit.headers['X-BFF-Actor-ID']).toBe('auth_user_uuid_from_db');
+      expect(calledInit.headers['X-BFF-Roles']).toBe('Student');
+
+      // 2. Request with invalid/expired cookie returns 401
+      const invalidReq = new Request('http://localhost:3000/api/bff/disclosures/ipr-001', {
+        method: 'GET',
+        headers: {
+          'Cookie': 'ipr_session=0000000000000000000000000000000000000000000000000000000000000000'
+        }
+      });
+
+      const invalidRes = await cookieForwarder.forwardRequest(invalidReq, '/disclosures/ipr-001');
+      expect(invalidRes.status).toBe(401);
+    });
   });
 });

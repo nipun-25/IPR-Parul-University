@@ -2,7 +2,14 @@ import express, { Router } from 'express';
 import type { Pool } from 'pg';
 import { EmailService } from '../services/email.service.js';
 import { AuthService } from '../services/auth.service.js';
-import { registerStudentHandler, verifyEmailHandler, resendVerificationHandler } from '../controllers/auth.controller.js';
+import {
+  registerStudentHandler,
+  verifyEmailHandler,
+  resendVerificationHandler,
+  loginHandler,
+  sessionHandler,
+  logoutHandler
+} from '../controllers/auth.controller.js';
 import { createCsrfBootstrapHandler } from '../controllers/csrf.controller.js';
 import { createRateLimiter } from '../middleware/rate-limiter.middleware.js';
 import { createOriginValidator } from '../middleware/origin-validator.middleware.js';
@@ -16,6 +23,7 @@ export interface AuthRouterOptions {
   readonly registerRateLimitMax?: number;
   readonly verifyRateLimitMax?: number;
   readonly resendRateLimitMax?: number;
+  readonly loginRateLimitMax?: number;
   readonly csrfRateLimitMax?: number;
   readonly csrfSecret: string;
   readonly isProduction?: boolean;
@@ -60,6 +68,14 @@ export function createAuthRouter(options: AuthRouterOptions): Router {
     code: 'RESEND_RATE_LIMIT_EXCEEDED'
   });
 
+  // Login: max requests per 15 minutes per IP (defaults to 5 in production)
+  const loginRateLimiter = createRateLimiter({
+    windowMs: 15 * 60 * 1000,
+    maxRequests: options.loginRateLimitMax ?? 5,
+    message: 'Too many login attempts from this IP. Please try again after 15 minutes.',
+    code: 'LOGIN_RATE_LIMIT_EXCEEDED'
+  });
+
   // Bootstrap pre-auth CSRF token & cookie
   router.get(
     '/csrf',
@@ -92,6 +108,25 @@ export function createAuthRouter(options: AuthRouterOptions): Router {
     preAuthCsrfMiddleware,
     resendRateLimiter,
     resendVerificationHandler(options.dbPool, options.emailService, options.corsOrigin, options.authService)
+  );
+
+  router.post(
+    '/login',
+    originValidator,
+    preAuthCsrfMiddleware,
+    loginRateLimiter,
+    loginHandler(options.dbPool, options.authService, options.csrfSecret, options.isProduction ?? false)
+  );
+
+  router.get(
+    '/session',
+    sessionHandler(options.dbPool, options.authService, options.csrfSecret, options.isProduction ?? false)
+  );
+
+  router.post(
+    '/logout',
+    originValidator,
+    logoutHandler(options.dbPool, options.authService, options.isProduction ?? false)
   );
 
   return router;

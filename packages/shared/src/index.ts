@@ -15,6 +15,7 @@ export * from './contracts/redis-client.interface.js';
 // Security
 export * from './security/hmac-canonical.js';
 export * from './security/csrf.js';
+export * from './security/cookie.js';
 export * from './security/nonce-store.interface.js';
 export * from './security/in-memory-nonce-store.js';
 
