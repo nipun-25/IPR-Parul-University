@@ -152,3 +152,75 @@ export interface SubmissionResultDto {
   trackingNumber: string;
   submittedAt?: string;
 }
+
+export const CreateAttachmentSchema = z.object({
+  disclosureId: z.string().uuid(),
+  fileName: z.string().min(1).max(255),
+  fileSizeBytes: z.number().int().positive(),
+  mimeType: z.string().min(1).max(128),
+  sha256Hash: z.string().regex(/^[0-9a-f]{64}$/i, 'Must be a 64-character hexadecimal SHA-256 hash'),
+  storagePath: z.string().min(1)
+}).strict();
+
+export type CreateAttachmentDto = z.infer<typeof CreateAttachmentSchema>;
+
+export const CreateConsentRequestSchema = z.object({
+  disclosureId: z.string().uuid(),
+  shareBasisPoints: z.number().int().min(1).max(10000),
+  userId: z.string().uuid().optional(),
+  isExternal: z.boolean().default(false),
+  externalName: z.string().min(1).max(255).optional(),
+  externalEmail: z.string().email().optional(),
+  externalOrganization: z.string().min(1).max(255).optional()
+}).strict().refine((data) => {
+  if (data.isExternal) {
+    return !!data.externalName && !!data.externalEmail;
+  }
+  return !!data.userId;
+}, {
+  message: 'Internal inventors require userId; external inventors require externalName and externalEmail'
+});
+
+export type CreateConsentRequestDto = z.infer<typeof CreateConsentRequestSchema>;
+
+export const RevokeConsentSchema = z.object({
+  consentId: z.string().uuid()
+}).strict();
+
+export type RevokeConsentDto = z.infer<typeof RevokeConsentSchema>;
+
+export interface DisclosureListItemDto {
+  id: string;
+  trackingNumber: string | null;
+  title: string;
+  status: string;
+  primaryInventorId: string;
+  reviewStatus: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InventorConsentItemDto {
+  id: string;
+  disclosureId: string;
+  userId: string | null;
+  isExternal: boolean;
+  externalName: string | null;
+  externalEmail: string | null;
+  externalOrganization: string | null;
+  shareBasisPoints: number;
+  status: string;
+  signatureEvidenceId: string | null;
+  verifiedAt: string | null;
+}
+
+export interface AttachmentItemDto {
+  id: string;
+  disclosureId: string;
+  fileName: string;
+  fileSizeBytes: number;
+  mimeType: string;
+  sha256Hash: string;
+  scanStatus: string;
+  createdAt: string;
+}

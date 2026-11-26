@@ -12,7 +12,15 @@ import { requestIdMiddleware } from './middleware/request-id.middleware.js';
 import { globalErrorHandler, AppError } from './middleware/error-handler.middleware.js';
 import { createBffAssertionMiddleware } from './middleware/bff-assertion.middleware.js';
 import { createDraftHandler, updateDraftHandler, submitDraftHandler } from './controllers/draft.controller.js';
-import { getDisclosureHandler } from './controllers/disclosure.controller.js';
+import {
+  getDisclosureHandler,
+  listDisclosuresHandler,
+  getDisclosureConsentsHandler,
+  getDisclosureAttachmentsHandler,
+  createAttachmentHandler,
+  createConsentRequestHandler,
+  revokeConsentHandler
+} from './controllers/disclosure.controller.js';
 import { createAuthRouter } from './routes/auth.routes.js';
 import { EmailService } from './services/email.service.js';
 import { AuthService } from './services/auth.service.js';
@@ -172,8 +180,22 @@ export function createApp(env: BackendEnv, options?: CreateAppOptions): Express 
   // Submit Draft Disclosure (Gate P2 Stage 2E)
   protectedApiRouter.post('/drafts/:id/submit', submitDraftHandler(options?.dbPool));
 
+  // List Disclosures (Student Dashboard - Gate P2 Stage 2G)
+  protectedApiRouter.get('/disclosures', listDisclosuresHandler(options?.dbPool));
+
   // View Disclosure (Gate P2 Stage 2C)
   protectedApiRouter.get('/disclosures/:id', getDisclosureHandler(options?.dbPool));
+
+  // View Disclosure Consents & Attachments List
+  protectedApiRouter.get('/disclosures/:id/consents', getDisclosureConsentsHandler(options?.dbPool));
+  protectedApiRouter.get('/disclosures/:id/attachments', getDisclosureAttachmentsHandler(options?.dbPool));
+
+  // Attachments Upload Metadata
+  protectedApiRouter.post('/attachments', createAttachmentHandler(options?.dbPool));
+
+  // Consent Requests Mutation
+  protectedApiRouter.post('/consent/request', createConsentRequestHandler(options?.dbPool));
+  protectedApiRouter.post('/consent/revoke', revokeConsentHandler(options?.dbPool));
 
   // Public Authentication Endpoints (Registration & Email Verification - Gate P2 Stage 2F)
   let csrfSecret: string;

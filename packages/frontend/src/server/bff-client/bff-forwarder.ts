@@ -29,6 +29,24 @@ interface RouteWhitelistRule {
  */
 const BFF_ROUTE_WHITELIST: readonly RouteWhitelistRule[] = [
   {
+    regex: /^\/disclosures$/,
+    method: 'GET',
+    scope: 'OP_VIEW_DISCLOSURE',
+    mapToBackendPath: () => '/api/v1/disclosures'
+  },
+  {
+    regex: /^\/disclosures\/([a-zA-Z0-9-]+)\/consents$/,
+    method: 'GET',
+    scope: 'OP_VIEW_DISCLOSURE',
+    mapToBackendPath: (m) => `/api/v1/disclosures/${m[1]}/consents`
+  },
+  {
+    regex: /^\/disclosures\/([a-zA-Z0-9-]+)\/attachments$/,
+    method: 'GET',
+    scope: 'OP_VIEW_DISCLOSURE',
+    mapToBackendPath: (m) => `/api/v1/disclosures/${m[1]}/attachments`
+  },
+  {
     regex: /^\/drafts\/([a-zA-Z0-9-]+)\/submit$/,
     method: 'POST',
     scope: 'OP_SUBMIT_DISCLOSURE',
