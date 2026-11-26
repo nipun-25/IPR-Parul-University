@@ -209,6 +209,20 @@ export function createApp(env: BackendEnv, options?: CreateAppOptions): Express 
   // Attachments Upload Metadata
   protectedApiRouter.post('/attachments', createAttachmentHandler(options?.dbPool));
 
+  // Attachment Binary Upload & Quarantine Scanning (Gate P2 Stage 2G.2)
+  // Privilege separation: Scanner must never fall back to dbPool (ipr_app).
+  // It requires either an explicitly injected scannerService or a dedicated scannerPool (ipr_scanner).
+  const quarantineStorage = options?.quarantineStorage ?? new InMemoryQuarantineStorage();
+  const scannerService = options?.scannerService ?? (
+    options?.scannerPool
+      ? new AntivirusScannerService(options.scannerPool, quarantineStorage)
+      : undefined
+  );
+  protectedApiRouter.post(
+    '/attachments/:id/upload',
+    uploadAttachmentContentHandler(options?.dbPool, quarantineStorage, scannerService)
+  );
+
   // Consent Requests Mutation
   protectedApiRouter.post('/consent/request', createConsentRequestHandler(options?.dbPool));
   protectedApiRouter.post('/consent/revoke', revokeConsentHandler(options?.dbPool));

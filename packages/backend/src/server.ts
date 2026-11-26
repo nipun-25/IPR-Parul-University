@@ -1,24 +1,36 @@
 
 import 'dotenv/config';
+import type { Pool } from 'pg';
 import { createApp } from './app.js';
 import { getEnv } from './config/env.config.js';
 import { logger } from './config/logger.config.js';
-import { createDatabasePool } from './db/pool.js';
+import { createDatabasePool, createScannerDatabasePool } from './db/pool.js';
 
 async function startServer(): Promise<void> {
-  let pool: ReturnType<typeof createDatabasePool> | undefined;
+  let appPool: Pool | undefined;
+  let scannerPool: Pool | undefined;
   let isShuttingDown = false;
 
   try {
     const env = getEnv();
 
-    // Initialize and verify PostgreSQL connection
-    pool = createDatabasePool(env);
-    await pool.query('SELECT 1');
+    // 1. Initialize and verify application PostgreSQL connection (ipr_app)
+    appPool = createDatabasePool(env);
+    await appPool.query('SELECT 1');
+    logger.info('PostgreSQL application pool established successfully');
 
-    logger.info('PostgreSQL connection established successfully');
+    // 2. Initialize and verify scanner PostgreSQL connection (ipr_scanner)
+    if (!env.SCANNER_DB_PASSWORD || env.SCANNER_DB_PASSWORD.trim().length === 0) {
+      throw new Error('FATAL: SCANNER_DB_PASSWORD is required to start backend server with antivirus scanner.');
+    }
+    scannerPool = createScannerDatabasePool(env);
+    await scannerPool.query('SELECT 1');
+    logger.info('PostgreSQL scanner pool established successfully');
 
-    const app = createApp(env, { dbPool: pool });
+    const app = createApp(env, {
+      dbPool: appPool,
+      scannerPool: scannerPool
+    });
 
     const server = app.listen(env.PORT, () => {
       logger.info(
@@ -36,12 +48,15 @@ async function startServer(): Promise<void> {
 
       server.close(async () => {
         try {
-          await pool?.end();
-          logger.info('PostgreSQL pool closed');
+          await Promise.allSettled([
+            appPool?.end(),
+            scannerPool?.end()
+          ]);
+          logger.info('PostgreSQL application and scanner pools closed');
         } catch (err) {
-          logger.error({ err }, 'Error closing PostgreSQL pool during shutdown');
+          logger.error({ err }, 'Error closing PostgreSQL pools during shutdown');
         }
-        logger.info('HTTP server and PostgreSQL pool closed');
+        logger.info('HTTP server and PostgreSQL pools closed');
         process.exit(0);
       });
 
@@ -54,8 +69,13 @@ async function startServer(): Promise<void> {
     process.on('SIGTERM', () => shutdown('SIGTERM'));
     process.on('SIGINT', () => shutdown('SIGINT'));
   } catch (error) {
-    await pool?.end().catch(() => undefined);
-    logger.fatal({ err: error }, 'Failed to start backend server');
+    // Gracefully terminate any partially created pools on startup failure
+    await Promise.allSettled([
+      appPool?.end().catch(() => undefined),
+      scannerPool?.end().catch(() => undefined)
+    ]);
+    const errMsg = error instanceof Error ? error.message : String(error);
+    logger.fatal({ err: errMsg }, 'Failed to start backend server');
     process.exit(1);
   }
 }

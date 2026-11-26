@@ -7,7 +7,7 @@ import { AppError } from '../middleware/error-handler.middleware.js';
 import { isDatabaseUnavailable } from '../utils/db-error.util.js';
 import { AntivirusScannerService } from '../services/scanner.service.js';
 
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_FILE_SIZE_BYTES = 26214400; // 25 MB
 
 const ALLOWED_EXTENSIONS = new Set(['.pdf', '.png', '.jpg', '.jpeg', '.zip']);
@@ -54,7 +54,7 @@ export function uploadAttachmentContentHandler(
         });
       }
 
-      const fileBuffer = req.rawBody;
+      const fileBuffer = req.rawBody ?? (Buffer.isBuffer(req.body) ? req.body : undefined);
       if (!fileBuffer || fileBuffer.length === 0) {
         throw new AppError({
           statusCode: 400,
@@ -227,10 +227,19 @@ export function uploadAttachmentContentHandler(
       }
 
       // Trigger Antivirus Scan Pipeline
+      if (!scannerService) {
+        throw new AppError({
+          statusCode: 503,
+          code: 'SCANNER_SERVICE_UNAVAILABLE',
+          title: 'Scanner Service Unavailable',
+          detail: 'Antivirus scanner service is not configured with a dedicated scanner pool.'
+        });
+      }
+
       let scanStatus = 'PENDING_SCAN';
       let scanDetails = 'Awaiting scanner evaluation';
 
-      if (scannerService) {
+      try {
         const scanRes = await scannerService.scanAndRecord({
           tokenId: tokenRow.token_id,
           attachmentId,
@@ -240,7 +249,23 @@ export function uploadAttachmentContentHandler(
         });
         scanStatus = scanRes.scanStatus;
         scanDetails = scanRes.scanDetails;
-      }
+      } catch (scanErr: unknown) {
+          const scanErrMsg = scanErr instanceof Error ? scanErr.message : String(scanErr);
+          if (scanErrMsg.includes('INVALID_SCAN_TOKEN') || scanErrMsg.includes('Scan token is invalid')) {
+            throw new AppError({
+              statusCode: 422,
+              code: 'INVALID_SCAN_TOKEN',
+              title: 'Invalid Scan Token',
+              detail: 'Scan token is invalid, expired, or already consumed.'
+            });
+          }
+          throw new AppError({
+            statusCode: 500,
+            code: 'SCANNER_ERROR',
+            title: 'Scanner Error',
+            detail: `Antivirus scan pipeline failed: ${scanErrMsg}`
+          });
+        }
 
       res.status(200).json({
         success: true,
@@ -250,8 +275,8 @@ export function uploadAttachmentContentHandler(
         message: scanStatus === 'CLEAN'
           ? 'File uploaded to quarantine and verified clean by antivirus scanner.'
           : scanStatus === 'INFECTED'
-          ? 'File uploaded to quarantine. Antivirus scanner flagged this file as infected.'
-          : 'File uploaded to quarantine successfully.'
+            ? 'File uploaded to quarantine. Antivirus scanner flagged this file as infected.'
+            : 'File uploaded to quarantine successfully.'
       });
     } catch (err: unknown) {
       if (isDatabaseUnavailable(err)) {

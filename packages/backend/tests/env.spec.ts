@@ -36,13 +36,21 @@ describe('Backend Environment Configuration (Gate A1)', () => {
   });
 
   const validProdCsrf = 'fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210';
+  const validProdScannerPw = 'dedicated_scanner_production_secret_pw';
+
+  it('defaults SCANNER_DB_USER to ipr_scanner', () => {
+    const parsed = parseEnv(validBaseEnv);
+    expect(parsed.SCANNER_DB_USER).toBe('ipr_scanner');
+    expect(parsed.SCANNER_DB_PASSWORD).toBeUndefined();
+  });
 
   it('rejects production environment when DB_SSL is false', () => {
     const prodWithoutSsl = {
       ...validBaseEnv,
       NODE_ENV: 'production',
       DB_SSL: 'false',
-      CSRF_SECRET: validProdCsrf
+      CSRF_SECRET: validProdCsrf,
+      SCANNER_DB_PASSWORD: validProdScannerPw
     };
     expect(() => parseEnv(prodWithoutSsl)).toThrow('DB_SSL must be enabled');
   });
@@ -53,7 +61,8 @@ describe('Backend Environment Configuration (Gate A1)', () => {
       NODE_ENV: 'production',
       DB_SSL: 'true',
       DB_SSL_CA_PATH: '/non/existent/path/ca.crt',
-      CSRF_SECRET: validProdCsrf
+      CSRF_SECRET: validProdCsrf,
+      SCANNER_DB_PASSWORD: validProdScannerPw
     };
     expect(() => parseEnv(prodWithoutCa)).toThrow('DB_SSL_CA_PATH file does not exist');
   });
@@ -65,7 +74,8 @@ describe('Backend Environment Configuration (Gate A1)', () => {
       DB_SSL: 'true',
       DB_SSL_CA_PATH: 'package.json', // Existing file for test
       TRUST_PROXY: 'true',
-      CSRF_SECRET: validProdCsrf
+      CSRF_SECRET: validProdCsrf,
+      SCANNER_DB_PASSWORD: validProdScannerPw
     };
     expect(() => parseEnv(prodBlindTrust)).toThrow('TRUST_PROXY must not be set to blind "true"');
   });
@@ -77,7 +87,8 @@ describe('Backend Environment Configuration (Gate A1)', () => {
       DB_SSL: 'true',
       DB_SSL_CA_PATH: 'package.json',
       TRUST_PROXY: 'loopback, 10.0.0.0/8',
-      CSRF_SECRET: validProdCsrf
+      CSRF_SECRET: validProdCsrf,
+      SCANNER_DB_PASSWORD: validProdScannerPw
     };
     const parsed = parseEnv(prodExplicitProxy);
     expect(parsed.TRUST_PROXY).toBe('loopback, 10.0.0.0/8');
@@ -88,7 +99,8 @@ describe('Backend Environment Configuration (Gate A1)', () => {
       ...validBaseEnv,
       NODE_ENV: 'production',
       DB_SSL: 'true',
-      DB_SSL_CA_PATH: 'package.json'
+      DB_SSL_CA_PATH: 'package.json',
+      SCANNER_DB_PASSWORD: validProdScannerPw
     };
     expect(() => parseEnv(prodWithoutCsrf)).toThrow('In production, a dedicated CSRF_SECRET must be provided.');
   });
@@ -99,7 +111,8 @@ describe('Backend Environment Configuration (Gate A1)', () => {
       NODE_ENV: 'production',
       DB_SSL: 'true',
       DB_SSL_CA_PATH: 'package.json',
-      CSRF_SECRET: 'short-secret'
+      CSRF_SECRET: 'short-secret',
+      SCANNER_DB_PASSWORD: validProdScannerPw
     };
     expect(() => parseEnv(prodWeakCsrf)).toThrow('at least 32 characters');
   });
@@ -110,20 +123,44 @@ describe('Backend Environment Configuration (Gate A1)', () => {
       NODE_ENV: 'production',
       DB_SSL: 'true',
       DB_SSL_CA_PATH: 'package.json',
-      CSRF_SECRET: validBaseEnv.BFF_SHARED_SECRET
+      CSRF_SECRET: validBaseEnv.BFF_SHARED_SECRET,
+      SCANNER_DB_PASSWORD: validProdScannerPw
     };
     expect(() => parseEnv(prodReusedSecret)).toThrow('secret separation required');
   });
 
-  it('accepts production environment with a strong, dedicated CSRF_SECRET distinct from BFF_SHARED_SECRET', () => {
-    const prodValidEnv = {
+  it('rejects production environment when SCANNER_DB_PASSWORD is missing', () => {
+    const prodWithoutScannerPw = {
       ...validBaseEnv,
       NODE_ENV: 'production',
       DB_SSL: 'true',
       DB_SSL_CA_PATH: 'package.json',
       CSRF_SECRET: validProdCsrf
     };
+    expect(() => parseEnv(prodWithoutScannerPw)).toThrow('In production, SCANNER_DB_PASSWORD must be provided');
+  });
+
+  it('rejects environment when SCANNER_DB_PASSWORD reuses DB_PASSWORD', () => {
+    const reusedScannerPw = {
+      ...validBaseEnv,
+      DB_PASSWORD: 'app_database_password_123',
+      SCANNER_DB_PASSWORD: 'app_database_password_123'
+    };
+    expect(() => parseEnv(reusedScannerPw)).toThrow('SCANNER_DB_PASSWORD must not reuse DB_PASSWORD');
+  });
+
+  it('accepts production environment with a strong, dedicated CSRF_SECRET and distinct SCANNER_DB_PASSWORD', () => {
+    const prodValidEnv = {
+      ...validBaseEnv,
+      NODE_ENV: 'production',
+      DB_SSL: 'true',
+      DB_SSL_CA_PATH: 'package.json',
+      CSRF_SECRET: validProdCsrf,
+      SCANNER_DB_PASSWORD: validProdScannerPw
+    };
     const parsed = parseEnv(prodValidEnv);
     expect(parsed.CSRF_SECRET).toBe(validProdCsrf);
+    expect(parsed.SCANNER_DB_PASSWORD).toBe(validProdScannerPw);
+    expect(parsed.SCANNER_DB_USER).toBe('ipr_scanner');
   });
 });

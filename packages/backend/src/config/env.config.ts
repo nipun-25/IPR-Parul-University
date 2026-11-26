@@ -31,13 +31,35 @@ export const BackendEnvSchema = z.object({
   DB_SSL: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
   DB_SSL_CA_PATH: z.string().optional(),
 
+  // Dedicated Antivirus Scanner Role Configuration
+  SCANNER_DB_USER: z.string().default('ipr_scanner'),
+  SCANNER_DB_PASSWORD: z.string().optional(),
+
   // Email / SMTP Configuration
   SMTP_HOST: z.string().default('smtp.gmail.com'),
   SMTP_PORT: z.coerce.number().int().positive().default(587),
   SMTP_USER: z.string().email('SMTP_USER must be a valid email address'),
   SMTP_PASSWORD: z.string().min(1, 'SMTP_PASSWORD is required'),
 }).superRefine((data, ctx) => {
+  // Credential separation: Scanner password must never reuse DB_PASSWORD
+  if (data.SCANNER_DB_PASSWORD && data.SCANNER_DB_PASSWORD.trim().length > 0) {
+    if (data.SCANNER_DB_PASSWORD.trim() === data.DB_PASSWORD.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'SCANNER_DB_PASSWORD must not reuse DB_PASSWORD (role and credential separation required).',
+        path: ['SCANNER_DB_PASSWORD']
+      });
+    }
+  }
+
   if (data.NODE_ENV === 'production') {
+    if (!data.SCANNER_DB_PASSWORD || data.SCANNER_DB_PASSWORD.trim().length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'In production, SCANNER_DB_PASSWORD must be provided for dedicated scanner database operations.',
+        path: ['SCANNER_DB_PASSWORD']
+      });
+    }
     if (!data.CSRF_SECRET || data.CSRF_SECRET.trim().length === 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -91,7 +113,9 @@ export const BackendEnvSchema = z.object({
   }
 });
 
-export type BackendEnv = z.infer<typeof BackendEnvSchema>;
+export type BackendEnv = Omit<z.infer<typeof BackendEnvSchema>, 'SCANNER_DB_USER'> & {
+  SCANNER_DB_USER?: string;
+};
 
 export function parseEnv(rawEnv: Record<string, string | undefined> = process.env): BackendEnv {
   const result = BackendEnvSchema.safeParse(rawEnv);

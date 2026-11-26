@@ -12,7 +12,7 @@ export class AntivirusScannerService {
   constructor(
     private readonly scannerPool?: Pool,
     private readonly quarantineStorage?: IQuarantineStorageAdapter
-  ) {}
+  ) { }
 
   /**
    * Scans an attachment file stored in quarantine and records the result
@@ -51,8 +51,8 @@ export class AntivirusScannerService {
     // 3. Synchronize quarantine storage adapter state
     if (this.quarantineStorage) {
       if (scanStatus === 'CLEAN') {
-        await this.quarantineStorage.updateScanStatus(attachmentId, 'SCAN_CLEAN', sha256Hash);
-        await this.quarantineStorage.promoteObject(attachmentId, 1, sha256Hash);
+        const updatedMeta = await this.quarantineStorage.updateScanStatus(attachmentId, 'SCAN_CLEAN', sha256Hash);
+        await this.quarantineStorage.promoteObject(attachmentId, updatedMeta.version, sha256Hash);
       } else if (scanStatus === 'INFECTED') {
         await this.quarantineStorage.updateScanStatus(attachmentId, 'SCAN_INFECTED', sha256Hash);
       }
