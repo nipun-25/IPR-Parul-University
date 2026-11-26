@@ -28,15 +28,32 @@ export default function VerifyEmailPage() {
 
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000';
 
-    // 2. Submit token strictly in the POST request body
-    fetch(`${backendUrl}/api/v1/auth/verify-email`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ token })
+    // 2. Obtain short-lived pre-auth CSRF token and HttpOnly cookie
+    fetch(`${backendUrl}/api/v1/auth/csrf`, {
+      method: 'GET',
+      credentials: 'include'
     })
-      .then(async (res) => {
+      .then(async (csrfRes) => {
+        if (!csrfRes.ok) {
+          throw new Error('Failed to initialize security token.');
+        }
+        const csrfData = await csrfRes.json();
+        const csrfToken = csrfData?.csrfToken;
+        if (!csrfToken || typeof csrfToken !== 'string') {
+          throw new Error('Invalid security token response.');
+        }
+
+        // 3. Submit verification token strictly in the POST request body with CSRF protection
+        const res = await fetch(`${backendUrl}/api/v1/auth/verify-email`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': csrfToken
+          },
+          body: JSON.stringify({ token })
+        });
+
         const data = await res.json();
         if (res.ok && data.success) {
           setStatus('success');
@@ -46,9 +63,13 @@ export default function VerifyEmailPage() {
           setMessage(data.detail || 'The verification token is invalid, expired, or has already been used.');
         }
       })
-      .catch(() => {
+      .catch((err) => {
         setStatus('error');
-        setMessage('Network error. Unable to verify token at this time. Please try again.');
+        setMessage(
+          err instanceof Error && err.message.includes('security token')
+            ? 'Security initialization failed. Please reload and try again.'
+            : 'Network error. Unable to verify token at this time. Please try again.'
+        );
       });
   }, []);
 

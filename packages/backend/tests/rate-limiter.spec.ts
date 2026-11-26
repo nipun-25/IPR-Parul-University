@@ -83,17 +83,17 @@ describe('Stage 2F.2B — Proxy & Rate-Limiter Hardening', () => {
         code: 'TEST_LIMIT'
       });
 
-      const mockReq = { ip: '192.168.1.50', socket: { remoteAddress: '192.168.1.50' } } as any;
+      const mockReq = { ip: '192.168.1.50', socket: { remoteAddress: '192.168.1.50' } } as unknown as Parameters<typeof limiter>[0];
       const headers: Record<string, string> = {};
       const mockRes = {
         setHeader: (k: string, v: string) => {
           headers[k] = v;
         }
-      } as any;
+      } as unknown as Parameters<typeof limiter>[1];
 
-      let errorPassed: any = null;
-      const mockNext = (err?: any) => {
-        errorPassed = err || null;
+      let errorPassed: { statusCode?: number; code?: string } | null = null;
+      const mockNext = (err?: unknown) => {
+        errorPassed = (err as { statusCode?: number; code?: string }) || null;
       };
 
       // Request 1: allowed
@@ -109,9 +109,10 @@ describe('Stage 2F.2B — Proxy & Rate-Limiter Hardening', () => {
 
       // Request 3: blocked
       limiter(mockReq, mockRes, mockNext);
-      expect(errorPassed).not.toBeNull();
-      expect(errorPassed.statusCode).toBe(429);
-      expect(errorPassed.code).toBe('TEST_LIMIT');
+      const capturedErr = errorPassed as unknown as { statusCode?: number; code?: string } | null;
+      expect(capturedErr).not.toBeNull();
+      expect(capturedErr?.statusCode).toBe(429);
+      expect(capturedErr?.code).toBe('TEST_LIMIT');
       expect(headers['Retry-After']).toBeDefined();
 
       limiter.close();
@@ -144,6 +145,16 @@ describe('Stage 2F.2B — Proxy & Rate-Limiter Hardening', () => {
       };
     });
 
+  async function getCsrfForApp(targetApp: Parameters<typeof request>[0]) {
+    const res = await request(targetApp)
+      .get('/api/v1/auth/csrf')
+      .set('Origin', 'http://localhost:3000');
+    return {
+      csrfToken: res.body.csrfToken,
+      cookie: res.headers['set-cookie']?.[0] || ''
+    };
+  }
+
     afterEach(() => {
       vi.restoreAllMocks();
     });
@@ -158,11 +169,14 @@ describe('Stage 2F.2B — Proxy & Rate-Limiter Hardening', () => {
         trustProxy: false
       });
 
+      const { csrfToken, cookie } = await getCsrfForApp(app);
       // Attacker attempts to bypass limits by changing X-Forwarded-For on each request
       for (let i = 1; i <= 3; i++) {
         const res = await request(app)
           .post('/api/v1/auth/register')
           .set('Origin', 'http://localhost:3000')
+          .set('X-CSRF-Token', csrfToken)
+          .set('Cookie', cookie)
           .set('X-Forwarded-For', `203.0.113.${i}`)
           .send(validRegistrationPayload)
           .expect(200);
@@ -174,6 +188,8 @@ describe('Stage 2F.2B — Proxy & Rate-Limiter Hardening', () => {
       const blockedRes = await request(app)
         .post('/api/v1/auth/register')
         .set('Origin', 'http://localhost:3000')
+        .set('X-CSRF-Token', csrfToken)
+        .set('Cookie', cookie)
         .set('X-Forwarded-For', '203.0.113.99')
         .send(validRegistrationPayload)
         .expect(429);
@@ -192,6 +208,7 @@ describe('Stage 2F.2B — Proxy & Rate-Limiter Hardening', () => {
         trustProxy: 'loopback'
       });
 
+      const { csrfToken, cookie } = await getCsrfForApp(app);
       const clientA_IP = '198.51.100.10';
       const clientB_IP = '198.51.100.20';
 
@@ -199,6 +216,8 @@ describe('Stage 2F.2B — Proxy & Rate-Limiter Hardening', () => {
       await request(app)
         .post('/api/v1/auth/register')
         .set('Origin', 'http://localhost:3000')
+        .set('X-CSRF-Token', csrfToken)
+        .set('Cookie', cookie)
         .set('X-Forwarded-For', clientA_IP)
         .send(validRegistrationPayload)
         .expect(200);
@@ -207,6 +226,8 @@ describe('Stage 2F.2B — Proxy & Rate-Limiter Hardening', () => {
       await request(app)
         .post('/api/v1/auth/register')
         .set('Origin', 'http://localhost:3000')
+        .set('X-CSRF-Token', csrfToken)
+        .set('Cookie', cookie)
         .set('X-Forwarded-For', clientA_IP)
         .send(validRegistrationPayload)
         .expect(200);
@@ -215,6 +236,8 @@ describe('Stage 2F.2B — Proxy & Rate-Limiter Hardening', () => {
       const clientABlocked = await request(app)
         .post('/api/v1/auth/register')
         .set('Origin', 'http://localhost:3000')
+        .set('X-CSRF-Token', csrfToken)
+        .set('Cookie', cookie)
         .set('X-Forwarded-For', clientA_IP)
         .send(validRegistrationPayload)
         .expect(429);
@@ -225,6 +248,8 @@ describe('Stage 2F.2B — Proxy & Rate-Limiter Hardening', () => {
       const clientBAllowed = await request(app)
         .post('/api/v1/auth/register')
         .set('Origin', 'http://localhost:3000')
+        .set('X-CSRF-Token', csrfToken)
+        .set('Cookie', cookie)
         .set('X-Forwarded-For', clientB_IP)
         .send(validRegistrationPayload)
         .expect(200);
@@ -244,10 +269,13 @@ describe('Stage 2F.2B — Proxy & Rate-Limiter Hardening', () => {
         trustProxy: '10.0.0.1'
       });
 
+      const { csrfToken, cookie } = await getCsrfForApp(app);
       // 2 requests with different forwarded IPs
       await request(app)
         .post('/api/v1/auth/register')
         .set('Origin', 'http://localhost:3000')
+        .set('X-CSRF-Token', csrfToken)
+        .set('Cookie', cookie)
         .set('X-Forwarded-For', '203.0.113.1')
         .send(validRegistrationPayload)
         .expect(200);
@@ -255,6 +283,8 @@ describe('Stage 2F.2B — Proxy & Rate-Limiter Hardening', () => {
       await request(app)
         .post('/api/v1/auth/register')
         .set('Origin', 'http://localhost:3000')
+        .set('X-CSRF-Token', csrfToken)
+        .set('Cookie', cookie)
         .set('X-Forwarded-For', '203.0.113.2')
         .send(validRegistrationPayload)
         .expect(200);
@@ -263,6 +293,8 @@ describe('Stage 2F.2B — Proxy & Rate-Limiter Hardening', () => {
       const blockedRes = await request(app)
         .post('/api/v1/auth/register')
         .set('Origin', 'http://localhost:3000')
+        .set('X-CSRF-Token', csrfToken)
+        .set('Cookie', cookie)
         .set('X-Forwarded-For', '203.0.113.3')
         .send(validRegistrationPayload)
         .expect(429);
@@ -280,12 +312,15 @@ describe('Stage 2F.2B — Proxy & Rate-Limiter Hardening', () => {
         trustProxy: 'loopback'
       });
 
+      const { csrfToken, cookie } = await getCsrfForApp(app);
       const clientIP = '198.51.100.99';
 
       // 1. Exhaust registration rate limit for this IP
       await request(app)
         .post('/api/v1/auth/register')
         .set('Origin', 'http://localhost:3000')
+        .set('X-CSRF-Token', csrfToken)
+        .set('Cookie', cookie)
         .set('X-Forwarded-For', clientIP)
         .send(validRegistrationPayload)
         .expect(200);
@@ -294,6 +329,8 @@ describe('Stage 2F.2B — Proxy & Rate-Limiter Hardening', () => {
       await request(app)
         .post('/api/v1/auth/register')
         .set('Origin', 'http://localhost:3000')
+        .set('X-CSRF-Token', csrfToken)
+        .set('Cookie', cookie)
         .set('X-Forwarded-For', clientIP)
         .send(validRegistrationPayload)
         .expect(429);
@@ -302,6 +339,8 @@ describe('Stage 2F.2B — Proxy & Rate-Limiter Hardening', () => {
       const verifyRes = await request(app)
         .post('/api/v1/auth/verify-email')
         .set('Origin', 'http://localhost:3000')
+        .set('X-CSRF-Token', csrfToken)
+        .set('Cookie', cookie)
         .set('X-Forwarded-For', clientIP)
         .send({ token: 'a1b2c3d4e5f67890123456789abcdef0123456789abcdef0123456789abcdef0' })
         .expect(200);
@@ -323,12 +362,15 @@ describe('Stage 2F.2B — Proxy & Rate-Limiter Hardening', () => {
           trustProxy: 'loopback'
         });
 
+        const { csrfToken, cookie } = await getCsrfForApp(app);
         const clientIP = '198.51.100.77';
 
         // 1. Use the allowed request
         await request(app)
           .post('/api/v1/auth/register')
           .set('Origin', 'http://localhost:3000')
+          .set('X-CSRF-Token', csrfToken)
+          .set('Cookie', cookie)
           .set('X-Forwarded-For', clientIP)
           .send(validRegistrationPayload)
           .expect(200);
@@ -337,6 +379,8 @@ describe('Stage 2F.2B — Proxy & Rate-Limiter Hardening', () => {
         await request(app)
           .post('/api/v1/auth/register')
           .set('Origin', 'http://localhost:3000')
+          .set('X-CSRF-Token', csrfToken)
+          .set('Cookie', cookie)
           .set('X-Forwarded-For', clientIP)
           .send(validRegistrationPayload)
           .expect(429);
@@ -344,10 +388,15 @@ describe('Stage 2F.2B — Proxy & Rate-Limiter Hardening', () => {
         // 3. Advance time past the 15-minute window
         vi.advanceTimersByTime(15 * 60 * 1000 + 1000);
 
+        // Fetch fresh CSRF token after time advance
+        const freshCsrf = await getCsrfForApp(app);
+
         // 4. Request is now allowed again
         const recoveredRes = await request(app)
           .post('/api/v1/auth/register')
           .set('Origin', 'http://localhost:3000')
+          .set('X-CSRF-Token', freshCsrf.csrfToken)
+          .set('Cookie', freshCsrf.cookie)
           .set('X-Forwarded-For', clientIP)
           .send(validRegistrationPayload)
           .expect(200);

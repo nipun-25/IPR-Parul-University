@@ -52,6 +52,10 @@ export interface VerifyEmailResponseDto {
   userId: string;
 }
 
+export interface CsrfBootstrapResponseDto {
+  csrfToken: string;
+}
+
 export interface UserProfileDto {
   id: string;
   puUid: string;

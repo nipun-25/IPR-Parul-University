@@ -12,6 +12,9 @@ export const BackendEnvSchema = z.object({
   // Inter-Service BFF Security
   BFF_SHARED_SECRET: z.string().min(64, 'BFF_SHARED_SECRET must be at least 64 characters long'),
 
+  // CSRF Secret for pre-authentication synchronizer tokens
+  CSRF_SECRET: z.string().min(32, 'CSRF_SECRET must be at least 32 characters long').optional(),
+
   // Proxy Trust Configuration
   // undefined / 'false' (default): direct connection (local dev). Express ignores X-Forwarded-* headers.
   // Can be set to an IP, CIDR subnet, preconfigured subnet ('loopback', 'linklocal', 'uniquelocal'),

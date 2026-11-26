@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -27,6 +28,8 @@ export interface CreateAppOptions {
   readonly authService?: AuthService;
   readonly registerRateLimitMax?: number;
   readonly verifyRateLimitMax?: number;
+  readonly csrfRateLimitMax?: number;
+  readonly csrfSecret?: string;
   readonly trustProxy?: boolean | string | number | string[];
 }
 
@@ -171,13 +174,18 @@ export function createApp(env: BackendEnv, options?: CreateAppOptions): Express 
   protectedApiRouter.get('/disclosures/:id', getDisclosureHandler(options?.dbPool));
 
   // Public Authentication Endpoints (Registration & Email Verification - Gate P2 Stage 2F)
+  const csrfSecret = options?.csrfSecret ?? env.CSRF_SECRET ?? crypto.createHmac('sha256', env.BFF_SHARED_SECRET).update('pu_ipr_pre_auth_csrf_salt').digest('hex');
+
   const authRouter = createAuthRouter({
     dbPool: options?.dbPool,
     emailService: options?.emailService ?? (env.SMTP_USER ? new EmailService(env) : undefined),
     corsOrigin: env.CORS_ORIGIN,
     authService: options?.authService,
     registerRateLimitMax: options?.registerRateLimitMax ?? (env.NODE_ENV === 'test' ? 1000 : 5),
-    verifyRateLimitMax: options?.verifyRateLimitMax ?? (env.NODE_ENV === 'test' ? 1000 : 10)
+    verifyRateLimitMax: options?.verifyRateLimitMax ?? (env.NODE_ENV === 'test' ? 1000 : 10),
+    csrfRateLimitMax: options?.csrfRateLimitMax ?? (env.NODE_ENV === 'test' ? 1000 : 30),
+    csrfSecret,
+    isProduction: env.NODE_ENV === 'production'
   });
   app.use('/api/v1/auth', authRouter);
 

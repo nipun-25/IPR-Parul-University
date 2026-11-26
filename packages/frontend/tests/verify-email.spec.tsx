@@ -11,8 +11,9 @@ import {
 // Mark environment for React act support
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-describe('Stage 2F.2A — Token Scrubbing & Component Verification', () => {
+describe('Stage 2F.2C — Pre-Auth CSRF & Component Verification', () => {
   const validHexToken = 'a1b2c3d4e5f67890123456789abcdef0123456789abcdef0123456789abcdef0';
+  const mockCsrfToken = 'mock-csrf-salt.0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
   let container: HTMLDivElement;
   let root: Root | null = null;
 
@@ -20,6 +21,8 @@ describe('Stage 2F.2A — Token Scrubbing & Component Verification', () => {
     delete window.__PU_VERIFY_TOKEN__;
     window.location.hash = '';
     window.location.pathname = '/verify-email';
+    localStorage.clear();
+    sessionStorage.clear();
     container = document.createElement('div');
     document.body.appendChild(container);
   });
@@ -160,11 +163,33 @@ describe('Stage 2F.2A — Token Scrubbing & Component Verification', () => {
     });
   });
 
-  describe('4. VerifyEmailPage Component Tests', () => {
-    it('renders successful verification UI when backend returns 200 and never exposes token in DOM', async () => {
+  describe('4. VerifyEmailPage Component Tests with CSRF Protection', () => {
+    function setupMockFetch(verifyResponse: () => Promise<Response> | Response) {
+      return vi.fn().mockImplementation((url: string, options?: RequestInit) => {
+        if (url.includes('/api/v1/auth/csrf')) {
+          expect(options?.credentials).toBe('include');
+          return Promise.resolve(
+            new Response(JSON.stringify({ csrfToken: mockCsrfToken }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' }
+            })
+          );
+        }
+        if (url.includes('/api/v1/auth/verify-email')) {
+          expect(options?.credentials).toBe('include');
+          const headers = options?.headers as Record<string, string>;
+          expect(headers['X-CSRF-Token']).toBe(mockCsrfToken);
+          expect(headers['Content-Type']).toBe('application/json');
+          return Promise.resolve(verifyResponse());
+        }
+        return Promise.reject(new Error(`Unexpected fetch URL: ${url}`));
+      });
+    }
+
+    it('renders successful verification UI when backend returns 200 and never exposes tokens in DOM or storage', async () => {
       window.__PU_VERIFY_TOKEN__ = validHexToken;
 
-      const mockFetch = vi.fn().mockResolvedValue(
+      const mockFetch = setupMockFetch(() =>
         new Response(
           JSON.stringify({
             success: true,
@@ -184,27 +209,37 @@ describe('Stage 2F.2A — Token Scrubbing & Component Verification', () => {
       // Flush microtasks
       await act(async () => {
         await Promise.resolve();
+        await Promise.resolve();
       });
 
-      expect(mockFetch).toHaveBeenCalledTimes(1);
-      const [url, options] = mockFetch.mock.calls[0];
-      expect(url).toContain('/api/v1/auth/verify-email');
-      expect(options.method).toBe('POST');
-      expect(JSON.parse(options.body)).toEqual({ token: validHexToken });
+      expect(mockFetch).toHaveBeenCalledTimes(2); // 1: GET /csrf, 2: POST /verify-email
+
+      // Verify POST call details
+      const [postUrl, postOptions] = mockFetch.mock.calls[1];
+      expect(postUrl).toContain('/api/v1/auth/verify-email');
+      expect(postOptions.method).toBe('POST');
+      expect(JSON.parse(postOptions.body)).toEqual({ token: validHexToken });
 
       // UI assertions
       expect(container.textContent).toContain('Email verified successfully. Your student account is now active.');
       expect(container.textContent).toContain('You may now proceed to log in.');
 
-      // Token Non-Exposure check: raw token must NEVER appear in rendered DOM
+      // Non-exposure assertions: raw token and CSRF token must NEVER appear in rendered DOM
       expect(container.innerHTML).not.toContain(validHexToken);
       expect(container.textContent).not.toContain(validHexToken);
+      expect(container.innerHTML).not.toContain(mockCsrfToken);
+
+      // Storage assertions: tokens must NEVER be stored in persistent browser storage
+      expect(localStorage.getItem('token')).toBeNull();
+      expect(localStorage.getItem('csrfToken')).toBeNull();
+      expect(sessionStorage.getItem('token')).toBeNull();
+      expect(sessionStorage.getItem('csrfToken')).toBeNull();
     });
 
-    it('renders error UI when token is invalid or expired (HTTP 400) and never exposes token in DOM', async () => {
+    it('renders error UI when token is invalid or expired (HTTP 400)', async () => {
       window.__PU_VERIFY_TOKEN__ = validHexToken;
 
-      const mockFetch = vi.fn().mockResolvedValue(
+      const mockFetch = setupMockFetch(() =>
         new Response(
           JSON.stringify({
             code: 'INVALID_VERIFICATION_TOKEN',
@@ -222,9 +257,10 @@ describe('Stage 2F.2A — Token Scrubbing & Component Verification', () => {
 
       await act(async () => {
         await Promise.resolve();
+        await Promise.resolve();
       });
 
-      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
       expect(container.textContent).toContain('The verification token is invalid, expired, or has already been used.');
       expect(container.innerHTML).not.toContain(validHexToken);
     });
@@ -232,7 +268,35 @@ describe('Stage 2F.2A — Token Scrubbing & Component Verification', () => {
     it('renders error UI on network failure and never exposes token in DOM', async () => {
       window.__PU_VERIFY_TOKEN__ = validHexToken;
 
-      const mockFetch = vi.fn().mockRejectedValue(new Error('Network offline'));
+      const mockFetch = setupMockFetch(() => {
+        throw new Error('Network offline');
+      });
+      vi.stubGlobal('fetch', mockFetch);
+
+      await act(async () => {
+        root = createRoot(container);
+        root.render(<VerifyEmailPage />);
+      });
+
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(container.textContent).toContain('Network error. Unable to verify token at this time. Please try again.');
+      expect(container.innerHTML).not.toContain(validHexToken);
+    });
+
+    it('renders error UI when CSRF bootstrap fails', async () => {
+      window.__PU_VERIFY_TOKEN__ = validHexToken;
+
+      const mockFetch = vi.fn().mockImplementation((url: string) => {
+        if (url.includes('/api/v1/auth/csrf')) {
+          return Promise.resolve(new Response(JSON.stringify({ error: 'failed' }), { status: 500 }));
+        }
+        return Promise.reject(new Error('Should not reach here'));
+      });
       vi.stubGlobal('fetch', mockFetch);
 
       await act(async () => {
@@ -244,9 +308,8 @@ describe('Stage 2F.2A — Token Scrubbing & Component Verification', () => {
         await Promise.resolve();
       });
 
-      expect(mockFetch).toHaveBeenCalledTimes(1);
-      expect(container.textContent).toContain('Network error. Unable to verify token at this time. Please try again.');
-      expect(container.innerHTML).not.toContain(validHexToken);
+      expect(mockFetch).toHaveBeenCalledTimes(1); // Only CSRF was attempted
+      expect(container.textContent).toContain('Security initialization failed. Please reload and try again.');
     });
 
     it('renders error UI without calling backend when token is missing or malformed', async () => {
@@ -265,7 +328,7 @@ describe('Stage 2F.2A — Token Scrubbing & Component Verification', () => {
     it('prevents duplicate network submissions on repeated renders', async () => {
       window.__PU_VERIFY_TOKEN__ = validHexToken;
 
-      const mockFetch = vi.fn().mockResolvedValue(
+      const mockFetch = setupMockFetch(() =>
         new Response(
           JSON.stringify({ success: true, message: 'Verified' }),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
@@ -285,9 +348,11 @@ describe('Stage 2F.2A — Token Scrubbing & Component Verification', () => {
 
       await act(async () => {
         await Promise.resolve();
+        await Promise.resolve();
       });
 
-      expect(mockFetch).toHaveBeenCalledTimes(1);
+      // Total calls must still be exactly 2: 1 for /csrf, 1 for /verify-email
+      expect(mockFetch).toHaveBeenCalledTimes(2);
     });
   });
 });

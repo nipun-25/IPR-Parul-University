@@ -36,7 +36,10 @@ describe('Stage 2F.2 — Student Registration & Email Verification', () => {
     password: 'ValidPassword123!'
   };
 
-  beforeEach(() => {
+  let defaultCsrfToken = '';
+  let defaultCsrfCookie = '';
+
+  beforeEach(async () => {
     mockPool = { query: vi.fn() };
     mockEmailService = {
       sendEmail: vi.fn().mockResolvedValue(undefined),
@@ -47,6 +50,12 @@ describe('Stage 2F.2 — Student Registration & Email Verification', () => {
       emailService: mockEmailService as unknown as EmailService,
       nonceStore: new InMemoryNonceStore()
     });
+
+    const csrfRes = await request(app)
+      .get('/api/v1/auth/csrf')
+      .set('Origin', 'http://localhost:3000');
+    defaultCsrfToken = csrfRes.body.csrfToken;
+    defaultCsrfCookie = csrfRes.headers['set-cookie']?.[0] || '';
   });
 
   describe('1. Student Registration (POST /api/v1/auth/register)', () => {
@@ -58,6 +67,8 @@ describe('Stage 2F.2 — Student Registration & Email Verification', () => {
       const res = await request(app)
         .post('/api/v1/auth/register')
         .set('Origin', 'http://localhost:3000')
+        .set('X-CSRF-Token', defaultCsrfToken)
+        .set('Cookie', defaultCsrfCookie)
         .send(validRegistrationPayload)
         .expect(200);
 
@@ -93,6 +104,8 @@ describe('Stage 2F.2 — Student Registration & Email Verification', () => {
       await request(app)
         .post('/api/v1/auth/register')
         .set('Origin', 'http://localhost:3000')
+        .set('X-CSRF-Token', defaultCsrfToken)
+        .set('Cookie', defaultCsrfCookie)
         .send({
           email: '  STUDENT.UPPERCASE@PARULUNIVERSITY.AC.IN  ',
           fullName: '   Dr. John Smith   ',
@@ -119,6 +132,8 @@ describe('Stage 2F.2 — Student Registration & Email Verification', () => {
         const res = await request(app)
           .post('/api/v1/auth/register')
           .set('Origin', 'http://localhost:3000')
+          .set('X-CSRF-Token', defaultCsrfToken)
+          .set('Cookie', defaultCsrfCookie)
           .send({ ...validRegistrationPayload, email })
           .expect(400);
 
@@ -135,6 +150,8 @@ describe('Stage 2F.2 — Student Registration & Email Verification', () => {
         const res = await request(app)
           .post('/api/v1/auth/register')
           .set('Origin', 'http://localhost:3000')
+          .set('X-CSRF-Token', defaultCsrfToken)
+          .set('Cookie', defaultCsrfCookie)
           .send({ ...validRegistrationPayload, fullName })
           .expect(400);
 
@@ -157,6 +174,8 @@ describe('Stage 2F.2 — Student Registration & Email Verification', () => {
         const res = await request(app)
           .post('/api/v1/auth/register')
           .set('Origin', 'http://localhost:3000')
+          .set('X-CSRF-Token', defaultCsrfToken)
+          .set('Cookie', defaultCsrfCookie)
           .send({ ...validRegistrationPayload, password })
           .expect(400);
 
@@ -170,6 +189,8 @@ describe('Stage 2F.2 — Student Registration & Email Verification', () => {
       const res = await request(app)
         .post('/api/v1/auth/register')
         .set('Origin', 'http://localhost:3000')
+        .set('X-CSRF-Token', defaultCsrfToken)
+        .set('Cookie', defaultCsrfCookie)
         .send({
           ...validRegistrationPayload,
           extraField: 'malicious_input'
@@ -184,6 +205,8 @@ describe('Stage 2F.2 — Student Registration & Email Verification', () => {
       const res = await request(app)
         .post('/api/v1/auth/register')
         .set('Origin', 'http://localhost:3000')
+        .set('X-CSRF-Token', defaultCsrfToken)
+        .set('Cookie', defaultCsrfCookie)
         .send({
           ...validRegistrationPayload,
           roles: ['Administrator'],
@@ -203,6 +226,8 @@ describe('Stage 2F.2 — Student Registration & Email Verification', () => {
       const res = await request(app)
         .post('/api/v1/auth/register')
         .set('Origin', 'http://localhost:3000')
+        .set('X-CSRF-Token', defaultCsrfToken)
+        .set('Cookie', defaultCsrfCookie)
         .send(validRegistrationPayload)
         .expect(200);
 
@@ -222,6 +247,8 @@ describe('Stage 2F.2 — Student Registration & Email Verification', () => {
       const res = await request(app)
         .post('/api/v1/auth/register')
         .set('Origin', 'http://localhost:3000')
+        .set('X-CSRF-Token', defaultCsrfToken)
+        .set('Cookie', defaultCsrfCookie)
         .send(validRegistrationPayload)
         .expect(200);
 
@@ -241,6 +268,8 @@ describe('Stage 2F.2 — Student Registration & Email Verification', () => {
       const res = await request(app)
         .post('/api/v1/auth/register')
         .set('Origin', 'http://localhost:3000')
+        .set('X-CSRF-Token', defaultCsrfToken)
+        .set('Cookie', defaultCsrfCookie)
         .send(validRegistrationPayload)
         .expect(503);
 
@@ -259,6 +288,8 @@ describe('Stage 2F.2 — Student Registration & Email Verification', () => {
       const res = await request(appWithoutDb)
         .post('/api/v1/auth/register')
         .set('Origin', 'http://localhost:3000')
+        .set('X-CSRF-Token', defaultCsrfToken)
+        .set('Cookie', defaultCsrfCookie)
         .send(validRegistrationPayload)
         .expect(503);
 
@@ -278,6 +309,8 @@ describe('Stage 2F.2 — Student Registration & Email Verification', () => {
       const res = await request(app)
         .post('/api/v1/auth/verify-email')
         .set('Origin', 'http://localhost:3000')
+        .set('X-CSRF-Token', defaultCsrfToken)
+        .set('Cookie', defaultCsrfCookie)
         .send({ token: rawToken })
         .expect(200);
 
@@ -305,6 +338,8 @@ describe('Stage 2F.2 — Student Registration & Email Verification', () => {
         const res = await request(app)
           .post('/api/v1/auth/verify-email')
           .set('Origin', 'http://localhost:3000')
+          .set('X-CSRF-Token', defaultCsrfToken)
+          .set('Cookie', defaultCsrfCookie)
           .send({ token })
           .expect(400);
 
@@ -322,6 +357,8 @@ describe('Stage 2F.2 — Student Registration & Email Verification', () => {
       const res = await request(app)
         .post('/api/v1/auth/verify-email')
         .set('Origin', 'http://localhost:3000')
+        .set('X-CSRF-Token', defaultCsrfToken)
+        .set('Cookie', defaultCsrfCookie)
         .send({ token: rawToken })
         .expect(400);
 
@@ -337,6 +374,8 @@ describe('Stage 2F.2 — Student Registration & Email Verification', () => {
       const res = await request(app)
         .post('/api/v1/auth/verify-email')
         .set('Origin', 'http://localhost:3000')
+        .set('X-CSRF-Token', defaultCsrfToken)
+        .set('Cookie', defaultCsrfCookie)
         .send({ token: rawToken })
         .expect(400);
 
@@ -351,6 +390,8 @@ describe('Stage 2F.2 — Student Registration & Email Verification', () => {
       const res = await request(app)
         .post('/api/v1/auth/verify-email')
         .set('Origin', 'http://localhost:3000')
+        .set('X-CSRF-Token', defaultCsrfToken)
+        .set('Cookie', defaultCsrfCookie)
         .send({ token: rawToken })
         .expect(503);
 
@@ -399,6 +440,8 @@ describe('Stage 2F.2 — Student Registration & Email Verification', () => {
         await request(rateLimitedApp)
           .post('/api/v1/auth/register')
           .set('Origin', 'http://localhost:3000')
+          .set('X-CSRF-Token', defaultCsrfToken)
+          .set('Cookie', defaultCsrfCookie)
           .send({
             ...validRegistrationPayload,
             email: `student.${i}@paruluniversity.ac.in`
@@ -410,6 +453,8 @@ describe('Stage 2F.2 — Student Registration & Email Verification', () => {
       const res = await request(rateLimitedApp)
         .post('/api/v1/auth/register')
         .set('Origin', 'http://localhost:3000')
+        .set('X-CSRF-Token', defaultCsrfToken)
+        .set('Cookie', defaultCsrfCookie)
         .send({
           ...validRegistrationPayload,
           email: 'student.overflow@paruluniversity.ac.in'
