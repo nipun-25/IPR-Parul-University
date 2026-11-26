@@ -53,6 +53,12 @@ const BFF_ROUTE_WHITELIST: readonly RouteWhitelistRule[] = [
     mapToBackendPath: (m) => `/api/v1/drafts/${m[1]}`
   },
   {
+    regex: /^\/drafts\/([a-zA-Z0-9-]+)$/,
+    method: 'PATCH',
+    scope: 'OP_UPDATE_DRAFT',
+    mapToBackendPath: (m) => `/api/v1/drafts/${m[1]}`
+  },
+  {
     regex: /^\/attachments$/,
     method: 'POST',
     scope: 'OP_UPLOAD_ATTACHMENT',

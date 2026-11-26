@@ -33,7 +33,7 @@ export const ProvisionalPIDCSAttachmentSchema = z.object({
   sha256Checksum: z.string().regex(/^[0-9a-f]{64}$/, 'sha256Checksum must be 64-character lowercase hexadecimal')
 });
 
-const basePIDCSSchemaShape = {
+export const BasePIDCSObjectSchema = z.object({
   title: z.string().min(1).max(512),
   abstract: z.string().min(1),
   fieldOfInvention: z.string().min(1),
@@ -42,7 +42,9 @@ const basePIDCSSchemaShape = {
   priorArtDetails: z.string().min(1),
   inventors: z.array(ProvisionalPIDCSInventorSchema).min(1).max(50),
   attachments: z.array(ProvisionalPIDCSAttachmentSchema).max(20)
-};
+});
+
+const basePIDCSSchemaShape = BasePIDCSObjectSchema.shape;
 
 /**
  * Common validation rule: prevents duplicate internal user IDs or duplicate external emails.

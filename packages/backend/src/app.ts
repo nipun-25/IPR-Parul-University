@@ -10,7 +10,8 @@ import {
 import { requestIdMiddleware } from './middleware/request-id.middleware.js';
 import { globalErrorHandler, AppError } from './middleware/error-handler.middleware.js';
 import { createBffAssertionMiddleware } from './middleware/bff-assertion.middleware.js';
-import { createResourceAuthorizationMiddleware } from './middleware/resource-authorization.middleware.js';
+import { createDraftHandler, updateDraftHandler, submitDraftHandler } from './controllers/draft.controller.js';
+import { getDisclosureHandler } from './controllers/disclosure.controller.js';
 import { BackendEnv } from './config/env.config.js';
 
 export interface CreateAppOptions {
@@ -23,7 +24,6 @@ export interface CreateAppOptions {
 export function createApp(env: BackendEnv, options?: CreateAppOptions): Express {
   const app: Express = express();
   const nonceStore = options?.nonceStore ?? new InMemoryNonceStore();
-  const resourceAuthProvider = options?.resourceAuthProvider;
 
   // Standard Security Headers
   app.use(helmet({
@@ -138,41 +138,17 @@ export function createApp(env: BackendEnv, options?: CreateAppOptions): Express 
     allowedClockSkewSeconds: options?.allowedClockSkewSeconds
   }));
 
-  // 2. Protected Routes with Object-Level Resource Authorization
-  protectedApiRouter.post(
-    '/drafts/:id/submit',
-    createResourceAuthorizationMiddleware({
-      resourceType: 'DRAFT',
-      getResourceId: (req) => req.params.id,
-      provider: resourceAuthProvider
-    }),
-    (req: Request, res: Response) => {
-      res.status(200).json({
-        success: true,
-        message: 'Draft submission accepted for processing',
-        draftId: req.params.id,
-        actor: req.actor
-      });
-    }
-  );
+  // Create Draft Disclosure (Gate P2 Stage 2B)
+  protectedApiRouter.post('/drafts', createDraftHandler(options?.dbPool));
 
-  protectedApiRouter.get(
-    '/disclosures/:id',
-    createResourceAuthorizationMiddleware({
-      resourceType: 'DISCLOSURE',
-      getResourceId: (req) => req.params.id,
-      provider: resourceAuthProvider
-    }),
-    (req: Request, res: Response) => {
-      res.status(200).json({
-        success: true,
-        disclosureId: req.params.id,
-        status: req.query.status,
-        include: req.query.include,
-        actor: req.actor
-      });
-    }
-  );
+  // Update Draft Disclosure (Gate P2 Stage 2D)
+  protectedApiRouter.patch('/drafts/:id', updateDraftHandler(options?.dbPool));
+
+  // Submit Draft Disclosure (Gate P2 Stage 2E)
+  protectedApiRouter.post('/drafts/:id/submit', submitDraftHandler(options?.dbPool));
+
+  // View Disclosure (Gate P2 Stage 2C)
+  protectedApiRouter.get('/disclosures/:id', getDisclosureHandler(options?.dbPool));
 
   // Mount the centralized protected router under /api/v1
   app.use('/api/v1', protectedApiRouter);

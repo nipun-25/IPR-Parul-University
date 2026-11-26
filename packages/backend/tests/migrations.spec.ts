@@ -13,9 +13,10 @@ describe('Gate B1 SQL Migrations Static Verification', () => {
     '005_institutional_gateways.sql',
     '006_grants_privileges.sql',
     '007_authentication.sql',
+    '008_pidcs_partial_update.sql',
   ];
 
-  it('should contain all 7 required migration files in the expected order', () => {
+  it('should contain all 8 required migration files in the expected order', () => {
     const files = fs.readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort();
     expect(files).toEqual(expectedFiles);
   });
@@ -291,6 +292,34 @@ describe('Gate B1 SQL Migrations Static Verification', () => {
     // Schema usage
     expect(content).toContain('GRANT USAGE ON SCHEMA auth_internal TO ipr_app;');
     expect(content).toContain('REVOKE CREATE ON SCHEMA auth_internal FROM ipr_definer;');
+  });
+
+  it('008_pidcs_partial_update.sql: should implement RFC 7396 JSON Merge Patch helper and update gateway with strict internal privileges', () => {
+    const content = fs.readFileSync(path.join(migrationsDir, '008_pidcs_partial_update.sql'), 'utf-8');
+
+    // 1. JSON Merge Patch internal helper
+    expect(content).toContain('FUNCTION auth_internal.jsonb_merge_patch(target JSONB, patch JSONB)');
+    expect(content).toContain('SECURITY DEFINER');
+    expect(content).toContain('SET search_path = pg_catalog, auth_internal, public, pg_temp');
+    expect(content).toContain('OWNER TO ipr_definer;');
+    expect(content).toContain('REVOKE ALL ON FUNCTION auth_internal.jsonb_merge_patch(JSONB, JSONB) FROM PUBLIC;');
+    expect(content).toContain('GRANT EXECUTE ON FUNCTION auth_internal.jsonb_merge_patch(JSONB, JSONB) TO ipr_definer;');
+
+    // Verify ipr_app is NOT granted execute on internal helper
+    expect(content).not.toMatch(/GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+auth_internal\.jsonb_merge_patch[^\n;]*TO\s+ipr_app/i);
+
+    // 2. Gateway function definition and privileges
+    expect(content).toContain('FUNCTION public.update_draft_disclosure_v1');
+    expect(content).toContain('auth_internal.jsonb_merge_patch(pidcs_data, p_pidcs_data)');
+    expect(content).toContain('OWNER TO ipr_definer;');
+    expect(content).toContain('REVOKE ALL ON FUNCTION public.update_draft_disclosure_v1(JSONB, UUID, VARCHAR, JSONB) FROM PUBLIC;');
+    expect(content).toContain('GRANT EXECUTE ON FUNCTION public.update_draft_disclosure_v1(JSONB, UUID, VARCHAR, JSONB) TO ipr_app;');
+
+    // 3. Row lock, invariants, outbox event
+    expect(content).toContain('FOR UPDATE');
+    expect(content).toContain('INVALID_STATE');
+    expect(content).toContain('FORBIDDEN');
+    expect(content).toContain('DISCLOSURE_DRAFT_UPDATED');
   });
 
   it('should ensure balanced dollar quotes and delimiters in all migration files', () => {

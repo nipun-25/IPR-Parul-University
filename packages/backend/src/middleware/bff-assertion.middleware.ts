@@ -19,11 +19,25 @@ export interface AuthenticatedActorContext {
   readonly nonce: string;
 }
 
+export interface DatabaseRequestAssertion {
+  readonly method: string;
+  readonly canonical_path: string;
+  readonly canonical_query: string;
+  readonly operation_scope: string;
+  readonly actor_id: string;
+  readonly asserted_roles: readonly string[];
+  readonly timestamp: string;
+  readonly nonce: string;
+  readonly body_hash: string;
+  readonly signature: string;
+}
+
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
       actor?: AuthenticatedActorContext;
+      assertion?: DatabaseRequestAssertion;
       rawBody?: Buffer;
     }
   }
@@ -209,13 +223,26 @@ export function createBffAssertionMiddleware(options: BffAssertionMiddlewareOpti
         });
       }
 
-      // 9. Attach trusted actor context for downstream handlers
+      // 9. Attach trusted actor context and database assertion for downstream handlers
       req.actor = {
         actorId,
         roles: parsedRoles,
         operationScope: scope,
         timestamp,
         nonce
+      };
+
+      req.assertion = {
+        method: req.method.toUpperCase(),
+        canonical_path: canonicalPath,
+        canonical_query: canonicalQuery,
+        operation_scope: scope,
+        actor_id: actorId,
+        asserted_roles: parsedRoles,
+        timestamp,
+        nonce,
+        body_hash: bodyHash.toLowerCase(),
+        signature: signature.toLowerCase()
       };
 
       return next();
