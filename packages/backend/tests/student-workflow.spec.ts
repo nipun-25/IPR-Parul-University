@@ -129,9 +129,28 @@ describe('Stage 2G — Student Disclosure Workflow Backend Endpoints', () => {
       expect(res.body.disclosures).toHaveLength(1);
       expect(res.body.disclosures[0].title).toBe('Smart AgTech Sensor');
       expect(mockPool.query).toHaveBeenCalledWith(
-        expect.stringContaining('FROM public.disclosures'),
-        [studentActorId]
+        expect.stringContaining('list_disclosures_v1'),
+        [expect.any(String)]
       );
+    });
+
+    it('returns 403 when database gateway raises insufficient_privilege', async () => {
+      const dbError = new Error('insufficient_privilege');
+      (dbError as unknown as { code: string }).code = '42501';
+      mockPool.query.mockRejectedValueOnce(dbError);
+
+      const headers = makeBffHeaders({
+        method: 'GET',
+        path: '/api/v1/disclosures',
+        scope: 'OP_VIEW_DISCLOSURE'
+      });
+
+      const res = await request(app)
+        .get('/api/v1/disclosures')
+        .set(headers);
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('DISCLOSURE_ACCESS_DENIED');
     });
   });
 
@@ -184,6 +203,48 @@ describe('Stage 2G — Student Disclosure Workflow Backend Endpoints', () => {
       expect(res.body.success).toBe(true);
       expect(res.body.consents).toHaveLength(1);
       expect(res.body.consents[0].shareBasisPoints).toBe(5000);
+      expect(mockPool.query).toHaveBeenCalledWith(
+        expect.stringContaining('get_disclosure_consents_v1'),
+        [expect.any(String), sampleDisclosureId]
+      );
+    });
+
+    it('returns 404 when target disclosure does not exist', async () => {
+      const dbError = new Error('NOT_FOUND: Disclosure does not exist');
+      (dbError as unknown as { code: string }).code = 'P0002';
+      mockPool.query.mockRejectedValueOnce(dbError);
+
+      const headers = makeBffHeaders({
+        method: 'GET',
+        path: `/api/v1/disclosures/${sampleDisclosureId}/consents`,
+        scope: 'OP_VIEW_DISCLOSURE'
+      });
+
+      const res = await request(app)
+        .get(`/api/v1/disclosures/${sampleDisclosureId}/consents`)
+        .set(headers);
+
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('RESOURCE_NOT_FOUND');
+    });
+
+    it('returns 403 when actor is unauthorized to view consents', async () => {
+      const dbError = new Error('FORBIDDEN: Actor not authorized to view consents');
+      (dbError as unknown as { code: string }).code = '42501';
+      mockPool.query.mockRejectedValueOnce(dbError);
+
+      const headers = makeBffHeaders({
+        method: 'GET',
+        path: `/api/v1/disclosures/${sampleDisclosureId}/consents`,
+        scope: 'OP_VIEW_DISCLOSURE'
+      });
+
+      const res = await request(app)
+        .get(`/api/v1/disclosures/${sampleDisclosureId}/consents`)
+        .set(headers);
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('DISCLOSURE_ACCESS_DENIED');
     });
   });
 
@@ -217,6 +278,48 @@ describe('Stage 2G — Student Disclosure Workflow Backend Endpoints', () => {
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.attachments[0].scanStatus).toBe('CLEAN');
+      expect(mockPool.query).toHaveBeenCalledWith(
+        expect.stringContaining('get_disclosure_attachments_v1'),
+        [expect.any(String), sampleDisclosureId]
+      );
+    });
+
+    it('returns 404 when target disclosure does not exist', async () => {
+      const dbError = new Error('NOT_FOUND: Disclosure does not exist');
+      (dbError as unknown as { code: string }).code = 'P0002';
+      mockPool.query.mockRejectedValueOnce(dbError);
+
+      const headers = makeBffHeaders({
+        method: 'GET',
+        path: `/api/v1/disclosures/${sampleDisclosureId}/attachments`,
+        scope: 'OP_VIEW_DISCLOSURE'
+      });
+
+      const res = await request(app)
+        .get(`/api/v1/disclosures/${sampleDisclosureId}/attachments`)
+        .set(headers);
+
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('RESOURCE_NOT_FOUND');
+    });
+
+    it('returns 403 when actor is unauthorized to view attachments', async () => {
+      const dbError = new Error('FORBIDDEN: Actor not authorized to view attachments');
+      (dbError as unknown as { code: string }).code = '42501';
+      mockPool.query.mockRejectedValueOnce(dbError);
+
+      const headers = makeBffHeaders({
+        method: 'GET',
+        path: `/api/v1/disclosures/${sampleDisclosureId}/attachments`,
+        scope: 'OP_VIEW_DISCLOSURE'
+      });
+
+      const res = await request(app)
+        .get(`/api/v1/disclosures/${sampleDisclosureId}/attachments`)
+        .set(headers);
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('DISCLOSURE_ACCESS_DENIED');
     });
   });
 

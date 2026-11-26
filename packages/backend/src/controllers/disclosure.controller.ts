@@ -152,21 +152,20 @@ export function listDisclosuresHandler(dbPool?: Pool) {
         });
       }
 
-      const actorId = req.actor?.actorId || req.assertion.actor_id;
       const result = await dbPool.query<DisclosureListItemDto>(
         `SELECT
-          id,
-          tracking_number AS "trackingNumber",
-          title,
-          status,
-          primary_inventor_id AS "primaryInventorId",
-          review_status AS "reviewStatus",
-          created_at AS "createdAt",
-          updated_at AS "updatedAt"
-        FROM public.disclosures
-        WHERE primary_inventor_id = $1
-        ORDER BY created_at DESC`,
-        [actorId]
+          out_id AS id,
+          out_tracking_number AS "trackingNumber",
+          out_title AS title,
+          out_status AS status,
+          out_primary_inventor_id AS "primaryInventorId",
+          out_assigned_reviewer_id AS "assignedReviewerId",
+          out_review_status AS "reviewStatus",
+          out_legal_clearance_status AS "legalClearanceStatus",
+          out_created_at AS "createdAt",
+          out_updated_at AS "updatedAt"
+        FROM public.list_disclosures_v1($1::jsonb)`,
+        [JSON.stringify(req.assertion)]
       );
 
       res.status(200).json({
@@ -174,6 +173,18 @@ export function listDisclosuresHandler(dbPool?: Pool) {
         disclosures: result.rows
       });
     } catch (err: unknown) {
+      const errRecord = (typeof err === 'object' && err !== null) ? (err as Record<string, unknown>) : {};
+      const errMsg = typeof errRecord.message === 'string' ? errRecord.message : '';
+
+      if (errMsg.includes('FORBIDDEN') || errRecord.code === '42501' || errMsg.includes('insufficient_privilege')) {
+        return next(new AppError({
+          statusCode: 403,
+          code: 'DISCLOSURE_ACCESS_DENIED',
+          title: 'Forbidden Resource Access',
+          detail: 'Actor is not authorized to list disclosures.'
+        }));
+      }
+
       if (isDatabaseUnavailable(err)) {
         return next(new AppError({
           statusCode: 503,
@@ -220,21 +231,19 @@ export function getDisclosureConsentsHandler(dbPool?: Pool) {
 
       const result = await dbPool.query<InventorConsentItemDto>(
         `SELECT
-          id,
-          disclosure_id AS "disclosureId",
-          user_id AS "userId",
-          is_external AS "isExternal",
-          external_name AS "externalName",
-          external_email AS "externalEmail",
-          external_organization AS "externalOrganization",
-          share_basis_points AS "shareBasisPoints",
-          status,
-          signature_evidence_id AS "signatureEvidenceId",
-          verified_at AS "verifiedAt"
-        FROM public.inventor_consents
-        WHERE disclosure_id = $1
-        ORDER BY created_at ASC`,
-        [disclosureId]
+          out_id AS id,
+          out_disclosure_id AS "disclosureId",
+          out_user_id AS "userId",
+          out_is_external AS "isExternal",
+          out_external_name AS "externalName",
+          out_external_email AS "externalEmail",
+          out_external_organization AS "externalOrganization",
+          out_share_basis_points AS "shareBasisPoints",
+          out_status AS status,
+          out_signature_evidence_id AS "signatureEvidenceId",
+          out_created_at AS "createdAt"
+        FROM public.get_disclosure_consents_v1($1::jsonb, $2::uuid)`,
+        [JSON.stringify(req.assertion), disclosureId]
       );
 
       res.status(200).json({
@@ -242,6 +251,27 @@ export function getDisclosureConsentsHandler(dbPool?: Pool) {
         consents: result.rows
       });
     } catch (err: unknown) {
+      const errRecord = (typeof err === 'object' && err !== null) ? (err as Record<string, unknown>) : {};
+      const errMsg = typeof errRecord.message === 'string' ? errRecord.message : '';
+
+      if (errMsg.includes('NOT_FOUND') || errRecord.code === 'P0002') {
+        return next(new AppError({
+          statusCode: 404,
+          code: 'RESOURCE_NOT_FOUND',
+          title: 'Resource Not Found',
+          detail: `Disclosure "${req.params.id}" does not exist.`
+        }));
+      }
+
+      if (errMsg.includes('FORBIDDEN') || errRecord.code === '42501' || errMsg.includes('insufficient_privilege')) {
+        return next(new AppError({
+          statusCode: 403,
+          code: 'DISCLOSURE_ACCESS_DENIED',
+          title: 'Forbidden Resource Access',
+          detail: 'Actor is not authorized to view consents for this disclosure.'
+        }));
+      }
+
       if (isDatabaseUnavailable(err)) {
         return next(new AppError({
           statusCode: 503,
@@ -288,18 +318,16 @@ export function getDisclosureAttachmentsHandler(dbPool?: Pool) {
 
       const result = await dbPool.query<AttachmentItemDto>(
         `SELECT
-          id,
-          disclosure_id AS "disclosureId",
-          file_name AS "fileName",
-          file_size_bytes AS "fileSizeBytes",
-          mime_type AS "mimeType",
-          sha256_hash AS "sha256Hash",
-          scan_status AS "scanStatus",
-          created_at AS "createdAt"
-        FROM public.attachments
-        WHERE disclosure_id = $1
-        ORDER BY created_at ASC`,
-        [disclosureId]
+          out_id AS id,
+          out_disclosure_id AS "disclosureId",
+          out_file_name AS "fileName",
+          out_file_size_bytes AS "fileSizeBytes",
+          out_mime_type AS "mimeType",
+          out_sha256_hash AS "sha256Hash",
+          out_scan_status AS "scanStatus",
+          out_created_at AS "createdAt"
+        FROM public.get_disclosure_attachments_v1($1::jsonb, $2::uuid)`,
+        [JSON.stringify(req.assertion), disclosureId]
       );
 
       res.status(200).json({
@@ -307,6 +335,27 @@ export function getDisclosureAttachmentsHandler(dbPool?: Pool) {
         attachments: result.rows
       });
     } catch (err: unknown) {
+      const errRecord = (typeof err === 'object' && err !== null) ? (err as Record<string, unknown>) : {};
+      const errMsg = typeof errRecord.message === 'string' ? errRecord.message : '';
+
+      if (errMsg.includes('NOT_FOUND') || errRecord.code === 'P0002') {
+        return next(new AppError({
+          statusCode: 404,
+          code: 'RESOURCE_NOT_FOUND',
+          title: 'Resource Not Found',
+          detail: `Disclosure "${req.params.id}" does not exist.`
+        }));
+      }
+
+      if (errMsg.includes('FORBIDDEN') || errRecord.code === '42501' || errMsg.includes('insufficient_privilege')) {
+        return next(new AppError({
+          statusCode: 403,
+          code: 'DISCLOSURE_ACCESS_DENIED',
+          title: 'Forbidden Resource Access',
+          detail: 'Actor is not authorized to view attachments for this disclosure.'
+        }));
+      }
+
       if (isDatabaseUnavailable(err)) {
         return next(new AppError({
           statusCode: 503,

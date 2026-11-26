@@ -15,9 +15,10 @@ describe('Gate B1 SQL Migrations Static Verification', () => {
     '007_authentication.sql',
     '008_pidcs_partial_update.sql',
     '009_verification_resend.sql',
+    '010_disclosure_queries.sql'
   ];
 
-  it('should contain all 9 required migration files in the expected order', () => {
+  it('should contain all 10 required migration files in the expected order', () => {
     const files = fs.readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort();
     expect(files).toEqual(expectedFiles);
   });
@@ -348,6 +349,37 @@ describe('Gate B1 SQL Migrations Static Verification', () => {
 
     // Verify ipr_app is NOT granted table access
     expect(content).not.toMatch(/GRANT\s+(SELECT|INSERT|UPDATE|DELETE)\s+ON\s+auth_internal\.pending_registrations[^\n;]*TO\s+ipr_app/i);
+  });
+
+  it('010_disclosure_queries.sql: should define SECURITY DEFINER query routines with least privilege', () => {
+    const content = fs.readFileSync(path.join(migrationsDir, '010_disclosure_queries.sql'), 'utf-8');
+
+    // 1. Routine definitions
+    expect(content).toContain('FUNCTION public.list_disclosures_v1');
+    expect(content).toContain('FUNCTION public.get_disclosure_consents_v1');
+    expect(content).toContain('FUNCTION public.get_disclosure_attachments_v1');
+
+    // 2. Security execution context
+    expect(content).toContain('SECURITY DEFINER');
+    expect(content).toContain('SET search_path = pg_catalog, auth_internal, public, pg_temp');
+    expect(content).toContain('auth_internal.verify_and_consume_request_assertion_v1(p_assertion, \'OP_VIEW_DISCLOSURE\')');
+
+    // 3. Ownership and explicit privilege grants
+    expect(content).toContain('ALTER FUNCTION public.list_disclosures_v1(JSONB) OWNER TO ipr_definer;');
+    expect(content).toContain('REVOKE ALL ON FUNCTION public.list_disclosures_v1(JSONB) FROM PUBLIC;');
+    expect(content).toContain('GRANT EXECUTE ON FUNCTION public.list_disclosures_v1(JSONB) TO ipr_app;');
+
+    expect(content).toContain('ALTER FUNCTION public.get_disclosure_consents_v1(JSONB, UUID) OWNER TO ipr_definer;');
+    expect(content).toContain('REVOKE ALL ON FUNCTION public.get_disclosure_consents_v1(JSONB, UUID) FROM PUBLIC;');
+    expect(content).toContain('GRANT EXECUTE ON FUNCTION public.get_disclosure_consents_v1(JSONB, UUID) TO ipr_app;');
+
+    expect(content).toContain('ALTER FUNCTION public.get_disclosure_attachments_v1(JSONB, UUID) OWNER TO ipr_definer;');
+    expect(content).toContain('REVOKE ALL ON FUNCTION public.get_disclosure_attachments_v1(JSONB, UUID) FROM PUBLIC;');
+    expect(content).toContain('GRANT EXECUTE ON FUNCTION public.get_disclosure_attachments_v1(JSONB, UUID) TO ipr_app;');
+
+    // 4. Strict least privilege verification: no direct table grants
+    expect(content).not.toMatch(/GRANT\s+(SELECT|INSERT|UPDATE|DELETE)\s+ON\s+TABLE/i);
+    expect(content).not.toMatch(/GRANT\s+ALL\s+ON\s+ALL\s+TABLES/i);
   });
 
   it('should ensure balanced dollar quotes and delimiters in all migration files', () => {
