@@ -89,6 +89,12 @@ export default function VerifyEmailPage() {
         {status === 'error' && (
           <div className="text-red-600" data-testid="status-error">
             <p className="font-semibold">{message}</p>
+            <p className="mt-4 text-sm text-gray-600">
+              Need a new verification link?{' '}
+              <a href="/resend-verification" className="text-blue-600 underline hover:text-blue-800">
+                Resend email
+              </a>
+            </p>
           </div>
         )}
         {status === 'idle' && (

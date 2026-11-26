@@ -35,11 +35,14 @@ describe('Backend Environment Configuration (Gate A1)', () => {
     expect(() => parseEnv(shortSecretEnv)).toThrow('at least 64 characters');
   });
 
+  const validProdCsrf = 'fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210';
+
   it('rejects production environment when DB_SSL is false', () => {
     const prodWithoutSsl = {
       ...validBaseEnv,
       NODE_ENV: 'production',
-      DB_SSL: 'false'
+      DB_SSL: 'false',
+      CSRF_SECRET: validProdCsrf
     };
     expect(() => parseEnv(prodWithoutSsl)).toThrow('DB_SSL must be enabled');
   });
@@ -49,7 +52,8 @@ describe('Backend Environment Configuration (Gate A1)', () => {
       ...validBaseEnv,
       NODE_ENV: 'production',
       DB_SSL: 'true',
-      DB_SSL_CA_PATH: '/non/existent/path/ca.crt'
+      DB_SSL_CA_PATH: '/non/existent/path/ca.crt',
+      CSRF_SECRET: validProdCsrf
     };
     expect(() => parseEnv(prodWithoutCa)).toThrow('DB_SSL_CA_PATH file does not exist');
   });
@@ -60,7 +64,8 @@ describe('Backend Environment Configuration (Gate A1)', () => {
       NODE_ENV: 'production',
       DB_SSL: 'true',
       DB_SSL_CA_PATH: 'package.json', // Existing file for test
-      TRUST_PROXY: 'true'
+      TRUST_PROXY: 'true',
+      CSRF_SECRET: validProdCsrf
     };
     expect(() => parseEnv(prodBlindTrust)).toThrow('TRUST_PROXY must not be set to blind "true"');
   });
@@ -71,9 +76,54 @@ describe('Backend Environment Configuration (Gate A1)', () => {
       NODE_ENV: 'production',
       DB_SSL: 'true',
       DB_SSL_CA_PATH: 'package.json',
-      TRUST_PROXY: 'loopback, 10.0.0.0/8'
+      TRUST_PROXY: 'loopback, 10.0.0.0/8',
+      CSRF_SECRET: validProdCsrf
     };
     const parsed = parseEnv(prodExplicitProxy);
     expect(parsed.TRUST_PROXY).toBe('loopback, 10.0.0.0/8');
+  });
+
+  it('rejects production environment when CSRF_SECRET is missing', () => {
+    const prodWithoutCsrf = {
+      ...validBaseEnv,
+      NODE_ENV: 'production',
+      DB_SSL: 'true',
+      DB_SSL_CA_PATH: 'package.json'
+    };
+    expect(() => parseEnv(prodWithoutCsrf)).toThrow('In production, a dedicated CSRF_SECRET must be provided.');
+  });
+
+  it('rejects production environment when CSRF_SECRET is fewer than 32 characters', () => {
+    const prodWeakCsrf = {
+      ...validBaseEnv,
+      NODE_ENV: 'production',
+      DB_SSL: 'true',
+      DB_SSL_CA_PATH: 'package.json',
+      CSRF_SECRET: 'short-secret'
+    };
+    expect(() => parseEnv(prodWeakCsrf)).toThrow('at least 32 characters');
+  });
+
+  it('rejects production environment when CSRF_SECRET reuses BFF_SHARED_SECRET', () => {
+    const prodReusedSecret = {
+      ...validBaseEnv,
+      NODE_ENV: 'production',
+      DB_SSL: 'true',
+      DB_SSL_CA_PATH: 'package.json',
+      CSRF_SECRET: validBaseEnv.BFF_SHARED_SECRET
+    };
+    expect(() => parseEnv(prodReusedSecret)).toThrow('secret separation required');
+  });
+
+  it('accepts production environment with a strong, dedicated CSRF_SECRET distinct from BFF_SHARED_SECRET', () => {
+    const prodValidEnv = {
+      ...validBaseEnv,
+      NODE_ENV: 'production',
+      DB_SSL: 'true',
+      DB_SSL_CA_PATH: 'package.json',
+      CSRF_SECRET: validProdCsrf
+    };
+    const parsed = parseEnv(prodValidEnv);
+    expect(parsed.CSRF_SECRET).toBe(validProdCsrf);
   });
 });

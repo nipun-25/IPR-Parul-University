@@ -28,6 +28,7 @@ export interface CreateAppOptions {
   readonly authService?: AuthService;
   readonly registerRateLimitMax?: number;
   readonly verifyRateLimitMax?: number;
+  readonly resendRateLimitMax?: number;
   readonly csrfRateLimitMax?: number;
   readonly csrfSecret?: string;
   readonly trustProxy?: boolean | string | number | string[];
@@ -174,7 +175,19 @@ export function createApp(env: BackendEnv, options?: CreateAppOptions): Express 
   protectedApiRouter.get('/disclosures/:id', getDisclosureHandler(options?.dbPool));
 
   // Public Authentication Endpoints (Registration & Email Verification - Gate P2 Stage 2F)
-  const csrfSecret = options?.csrfSecret ?? env.CSRF_SECRET ?? crypto.createHmac('sha256', env.BFF_SHARED_SECRET).update('pu_ipr_pre_auth_csrf_salt').digest('hex');
+  let csrfSecret: string;
+  if (options?.csrfSecret) {
+    csrfSecret = options.csrfSecret;
+  } else if (env.CSRF_SECRET) {
+    csrfSecret = env.CSRF_SECRET;
+  } else if (env.NODE_ENV !== 'production') {
+    // Explicit, development/test-only fallback when CSRF_SECRET is omitted in local dev
+    csrfSecret = crypto.createHmac('sha256', env.BFF_SHARED_SECRET)
+      .update('DEVELOPMENT_ONLY_pu_ipr_pre_auth_csrf_salt')
+      .digest('hex');
+  } else {
+    throw new Error('FATAL: CSRF_SECRET is required in production and must not be derived from other secrets.');
+  }
 
   const authRouter = createAuthRouter({
     dbPool: options?.dbPool,
@@ -183,6 +196,7 @@ export function createApp(env: BackendEnv, options?: CreateAppOptions): Express 
     authService: options?.authService,
     registerRateLimitMax: options?.registerRateLimitMax ?? (env.NODE_ENV === 'test' ? 1000 : 5),
     verifyRateLimitMax: options?.verifyRateLimitMax ?? (env.NODE_ENV === 'test' ? 1000 : 10),
+    resendRateLimitMax: options?.resendRateLimitMax ?? (env.NODE_ENV === 'test' ? 1000 : 5),
     csrfRateLimitMax: options?.csrfRateLimitMax ?? (env.NODE_ENV === 'test' ? 1000 : 30),
     csrfSecret,
     isProduction: env.NODE_ENV === 'production'

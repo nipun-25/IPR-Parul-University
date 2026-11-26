@@ -6,6 +6,8 @@ import {
   VerifyEmailDto,
   RegisterStudentResponseDto,
   VerifyEmailResponseDto,
+  ResendVerificationEmailDto,
+  ResendVerificationEmailResponseDto,
   computeSha256
 } from '@ipr/shared';
 import { AppError } from '../middleware/error-handler.middleware.js';
@@ -183,5 +185,87 @@ export class AuthService {
 
       throw err;
     }
+  }
+
+  /**
+   * Resends verification email for a pending student registration:
+   * 1. Rotates verification token and updates expiry in auth_internal.reissue_pending_verification_token_v1.
+   * 2. Enforces database-backed per-email cooldown (default 60s).
+   * 3. Dispatches verification email with raw token link fragment (#token=).
+   * 4. Returns generic success response whether email exists, is pending, or already verified.
+   */
+  public async resendVerificationEmail(
+    dbPool: Pool,
+    emailService: EmailService,
+    corsOrigin: string,
+    dto: ResendVerificationEmailDto,
+    cooldownSeconds: number = 60
+  ): Promise<ResendVerificationEmailResponseDto> {
+    const normalizedEmail = dto.email.trim().toLowerCase();
+    const { rawToken, tokenHash } = this.generateVerificationToken();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    let reissued = false;
+    let studentName: string | null = null;
+
+    try {
+      const result = await dbPool.query<{ reissued: boolean; full_name: string | null }>(
+        'SELECT reissued, full_name FROM auth_internal.reissue_pending_verification_token_v1($1::varchar, $2::varchar, $3::timestamptz, $4::integer)',
+        [normalizedEmail, tokenHash, expiresAt, cooldownSeconds]
+      );
+      const row = result.rows[0];
+      reissued = row?.reissued === true;
+      studentName = row?.full_name ?? null;
+    } catch (err: unknown) {
+      if (isDatabaseUnavailable(err)) {
+        throw new AppError({
+          statusCode: 503,
+          code: 'DATABASE_UNAVAILABLE',
+          title: 'Database Unavailable',
+          detail: 'Database connection failed or service is temporarily unavailable.'
+        });
+      }
+
+      const errRecord = (typeof err === 'object' && err !== null) ? (err as Record<string, unknown>) : {};
+      const errMsg = typeof errRecord.message === 'string' ? errRecord.message : '';
+
+      if (errMsg.includes('INVALID_STUDENT_EMAIL')) {
+        throw new AppError({
+          statusCode: 400,
+          code: 'INVALID_STUDENT_EMAIL',
+          title: 'Invalid Email',
+          detail: 'Verification email resend is restricted strictly to @paruluniversity.ac.in student emails.'
+        });
+      }
+
+      throw err;
+    }
+
+    if (reissued) {
+      const displayName = studentName || 'Student';
+      const verificationLink = `${corsOrigin}/verify-email#token=${rawToken}`;
+      try {
+        await emailService.sendEmail(
+          normalizedEmail,
+          'Verify your Parul University IPR Portal Account',
+          `Hello ${displayName},\n\nPlease verify your student registration for the Parul University Intellectual Property Rights (IPR) Portal by visiting the following link within 24 hours:\n\n${verificationLink}\n\nIf you did not request this verification email, please ignore this email.`,
+          `<p>Hello ${displayName},</p><p>Please verify your student registration for the <strong>Parul University Intellectual Property Rights (IPR) Portal</strong> by clicking the link below (valid for 24 hours):</p><p><a href="${verificationLink}" style="padding: 8px 16px; background-color: #0284c7; color: white; text-decoration: none; border-radius: 4px;">Verify Email</a></p><p>Or copy and paste this link into your browser:<br><code>${verificationLink}</code></p><p>If you did not request this verification email, please ignore this email.</p>`
+        );
+      } catch (err: unknown) {
+        // Log delivery failure safely without exposing email, token, or token hash.
+        // Return the same generic response to prevent account enumeration.
+        logger.error({ err }, 'Failed to dispatch student verification resend email');
+      }
+    } else {
+      logger.info(
+        { emailDomain: normalizedEmail.split('@')[1] },
+        'Resend verification requested for non-pending, already-verified, or cooldown-active email (generic response returned)'
+      );
+    }
+
+    return {
+      success: true,
+      message: 'If an unverified account exists for this email, a verification link has been sent to your institutional inbox.'
+    };
   }
 }

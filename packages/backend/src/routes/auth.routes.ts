@@ -2,7 +2,7 @@ import express, { Router } from 'express';
 import type { Pool } from 'pg';
 import { EmailService } from '../services/email.service.js';
 import { AuthService } from '../services/auth.service.js';
-import { registerStudentHandler, verifyEmailHandler } from '../controllers/auth.controller.js';
+import { registerStudentHandler, verifyEmailHandler, resendVerificationHandler } from '../controllers/auth.controller.js';
 import { createCsrfBootstrapHandler } from '../controllers/csrf.controller.js';
 import { createRateLimiter } from '../middleware/rate-limiter.middleware.js';
 import { createOriginValidator } from '../middleware/origin-validator.middleware.js';
@@ -15,6 +15,7 @@ export interface AuthRouterOptions {
   readonly authService?: AuthService;
   readonly registerRateLimitMax?: number;
   readonly verifyRateLimitMax?: number;
+  readonly resendRateLimitMax?: number;
   readonly csrfRateLimitMax?: number;
   readonly csrfSecret: string;
   readonly isProduction?: boolean;
@@ -51,6 +52,14 @@ export function createAuthRouter(options: AuthRouterOptions): Router {
     code: 'VERIFICATION_RATE_LIMIT_EXCEEDED'
   });
 
+  // Resend Verification: max requests per 15 minutes per IP (defaults to 5 in production)
+  const resendRateLimiter = createRateLimiter({
+    windowMs: 15 * 60 * 1000,
+    maxRequests: options.resendRateLimitMax ?? 5,
+    message: 'Too many verification resend requests from this IP. Please try again after 15 minutes.',
+    code: 'RESEND_RATE_LIMIT_EXCEEDED'
+  });
+
   // Bootstrap pre-auth CSRF token & cookie
   router.get(
     '/csrf',
@@ -75,6 +84,14 @@ export function createAuthRouter(options: AuthRouterOptions): Router {
     preAuthCsrfMiddleware,
     verifyRateLimiter,
     verifyEmailHandler(options.dbPool, options.authService)
+  );
+
+  router.post(
+    '/resend-verification',
+    originValidator,
+    preAuthCsrfMiddleware,
+    resendRateLimiter,
+    resendVerificationHandler(options.dbPool, options.emailService, options.corsOrigin, options.authService)
   );
 
   return router;

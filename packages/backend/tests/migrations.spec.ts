@@ -14,9 +14,10 @@ describe('Gate B1 SQL Migrations Static Verification', () => {
     '006_grants_privileges.sql',
     '007_authentication.sql',
     '008_pidcs_partial_update.sql',
+    '009_verification_resend.sql',
   ];
 
-  it('should contain all 8 required migration files in the expected order', () => {
+  it('should contain all 9 required migration files in the expected order', () => {
     const files = fs.readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort();
     expect(files).toEqual(expectedFiles);
   });
@@ -320,6 +321,33 @@ describe('Gate B1 SQL Migrations Static Verification', () => {
     expect(content).toContain('INVALID_STATE');
     expect(content).toContain('FORBIDDEN');
     expect(content).toContain('DISCLOSURE_DRAFT_UPDATED');
+  });
+
+  it('009_verification_resend.sql: should extend pending_registrations and implement secure reissue routine', () => {
+    const content = fs.readFileSync(path.join(migrationsDir, '009_verification_resend.sql'), 'utf-8');
+
+    // 1. Column additions with defaults
+    expect(content).toContain('ADD COLUMN IF NOT EXISTS last_resend_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()');
+    expect(content).toContain('ADD COLUMN IF NOT EXISTS resend_count INTEGER NOT NULL DEFAULT 0');
+
+    // 2. Gateway function definition and privileges
+    expect(content).toContain('FUNCTION auth_internal.reissue_pending_verification_token_v1');
+    expect(content).toContain('SECURITY DEFINER');
+    expect(content).toContain('SET search_path = pg_catalog, auth_internal, public, pg_temp');
+    expect(content).toContain('OWNER TO ipr_definer;');
+    expect(content).toContain('REVOKE ALL ON FUNCTION auth_internal.reissue_pending_verification_token_v1(VARCHAR, VARCHAR, TIMESTAMPTZ, INTEGER) FROM PUBLIC;');
+    expect(content).toContain('GRANT EXECUTE ON FUNCTION auth_internal.reissue_pending_verification_token_v1(VARCHAR, VARCHAR, TIMESTAMPTZ, INTEGER) TO ipr_app;');
+
+    // 3. Security controls
+    expect(content).toContain('FOR UPDATE');
+    expect(content).toContain('v_effective_cooldown');
+    expect(content).toContain('clock_timestamp() < v_registration.last_resend_at');
+    expect(content).toContain('INVALID_STUDENT_EMAIL');
+    expect(content).toContain('INVALID_VERIFICATION_TOKEN_HASH');
+    expect(content).toContain('reissued BOOLEAN');
+
+    // Verify ipr_app is NOT granted table access
+    expect(content).not.toMatch(/GRANT\s+(SELECT|INSERT|UPDATE|DELETE)\s+ON\s+auth_internal\.pending_registrations[^\n;]*TO\s+ipr_app/i);
   });
 
   it('should ensure balanced dollar quotes and delimiters in all migration files', () => {

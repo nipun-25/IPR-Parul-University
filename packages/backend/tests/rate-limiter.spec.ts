@@ -24,7 +24,7 @@ describe('Stage 2F.2B — Proxy & Rate-Limiter Hardening', () => {
     TRUST_PROXY: 'false',
     SMTP_HOST: 'smtp.gmail.com',
     SMTP_PORT: 587,
-    SMTP_USER: 'ipr-portal@paruluniversity.ac.in',
+    SMTP_USER: 'iprcell@paruluniversity.ac.in',
     SMTP_PASSWORD: 'smtp-secret-pass'
   };
 
@@ -145,15 +145,15 @@ describe('Stage 2F.2B — Proxy & Rate-Limiter Hardening', () => {
       };
     });
 
-  async function getCsrfForApp(targetApp: Parameters<typeof request>[0]) {
-    const res = await request(targetApp)
-      .get('/api/v1/auth/csrf')
-      .set('Origin', 'http://localhost:3000');
-    return {
-      csrfToken: res.body.csrfToken,
-      cookie: res.headers['set-cookie']?.[0] || ''
-    };
-  }
+    async function getCsrfForApp(targetApp: Parameters<typeof request>[0]) {
+      const res = await request(targetApp)
+        .get('/api/v1/auth/csrf')
+        .set('Origin', 'http://localhost:3000');
+      return {
+        csrfToken: res.body.csrfToken,
+        cookie: res.headers['set-cookie']?.[0] || ''
+      };
+    }
 
     afterEach(() => {
       vi.restoreAllMocks();

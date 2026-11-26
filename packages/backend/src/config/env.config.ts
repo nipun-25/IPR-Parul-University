@@ -38,6 +38,29 @@ export const BackendEnvSchema = z.object({
   SMTP_PASSWORD: z.string().min(1, 'SMTP_PASSWORD is required'),
 }).superRefine((data, ctx) => {
   if (data.NODE_ENV === 'production') {
+    if (!data.CSRF_SECRET || data.CSRF_SECRET.trim().length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'In production, a dedicated CSRF_SECRET must be provided.',
+        path: ['CSRF_SECRET']
+      });
+    } else {
+      if (data.CSRF_SECRET.trim().length < 32) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'In production, CSRF_SECRET must be at least 32 characters long.',
+          path: ['CSRF_SECRET']
+        });
+      }
+      if (data.CSRF_SECRET.trim() === data.BFF_SHARED_SECRET.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'In production, CSRF_SECRET must not reuse BFF_SHARED_SECRET (secret separation required).',
+          path: ['CSRF_SECRET']
+        });
+      }
+    }
+
     if (data.TRUST_PROXY && data.TRUST_PROXY.trim().toLowerCase() === 'true') {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

@@ -52,6 +52,25 @@ export interface VerifyEmailResponseDto {
   userId: string;
 }
 
+export const ResendVerificationEmailSchema = z.object({
+  email: z
+    .string({ required_error: 'Email is required' })
+    .trim()
+    .toLowerCase()
+    .email('Invalid email address')
+    .refine(
+      (val) => STUDENT_EMAIL_REGEX.test(val),
+      { message: 'Verification email resend is restricted strictly to @paruluniversity.ac.in student emails' }
+    )
+}).strict();
+
+export type ResendVerificationEmailDto = z.infer<typeof ResendVerificationEmailSchema>;
+
+export interface ResendVerificationEmailResponseDto {
+  success: boolean;
+  message: string;
+}
+
 export interface CsrfBootstrapResponseDto {
   csrfToken: string;
 }
