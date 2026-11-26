@@ -6,7 +6,9 @@ import type { Pool } from 'pg';
 import {
   INonceStore,
   InMemoryNonceStore,
-  IResourceAuthorizationProvider
+  IResourceAuthorizationProvider,
+  IQuarantineStorageAdapter,
+  InMemoryQuarantineStorage
 } from '@ipr/shared';
 import { requestIdMiddleware } from './middleware/request-id.middleware.js';
 import { globalErrorHandler, AppError } from './middleware/error-handler.middleware.js';
@@ -21,6 +23,8 @@ import {
   createConsentRequestHandler,
   revokeConsentHandler
 } from './controllers/disclosure.controller.js';
+import { uploadAttachmentContentHandler } from './controllers/attachment-upload.controller.js';
+import { AntivirusScannerService } from './services/scanner.service.js';
 import { createAuthRouter } from './routes/auth.routes.js';
 import { EmailService } from './services/email.service.js';
 import { AuthService } from './services/auth.service.js';
@@ -34,6 +38,9 @@ export interface CreateAppOptions {
   readonly dbPool?: Pool;
   readonly emailService?: EmailService;
   readonly authService?: AuthService;
+  readonly quarantineStorage?: IQuarantineStorageAdapter;
+  readonly scannerPool?: Pool;
+  readonly scannerService?: AntivirusScannerService;
   readonly registerRateLimitMax?: number;
   readonly verifyRateLimitMax?: number;
   readonly resendRateLimitMax?: number;
@@ -82,6 +89,15 @@ export function createApp(env: BackendEnv, options?: CreateAppOptions): Express 
       'X-BFF-Operation-Scope',
       'X-BFF-Body-Hash'
     ]
+  }));
+
+  // Raw stream body parser for binary/multipart attachment upload (up to 26MB)
+  app.use('/api/v1/attachments/:id/upload', express.raw({
+    type: () => true,
+    limit: '26mb',
+    verify: (req: Request, _res: Response, buf: Buffer) => {
+      req.rawBody = buf;
+    }
   }));
 
   // Body Parser with strict limit and raw body preservation for exact HMAC verification

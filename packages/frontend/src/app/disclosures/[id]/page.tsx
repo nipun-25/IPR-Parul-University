@@ -326,7 +326,33 @@ export default function DisclosureWorkspacePage() {
         throw new Error(data.detail || data.message || 'Failed to register attachment.');
       }
 
-      setUploadSuccess('File registered and scheduled for antivirus scanning.');
+      // Step 2: Stream raw file bytes to quarantine upload endpoint
+      const arrayBuffer = await selectedFile.arrayBuffer();
+      const uploadRes = await fetch(`/api/bff/attachments/${data.attachmentId}/upload`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': selectedFile.type || 'application/octet-stream',
+          'X-CSRF-Token': csrfToken
+        },
+        credentials: 'include',
+        body: arrayBuffer
+      });
+
+      const uploadData = await uploadRes.json();
+      if (!uploadRes.ok) {
+        throw new Error(uploadData.detail || uploadData.message || 'Failed to upload attachment content to quarantine.');
+      }
+
+      if (uploadData.scanStatus === 'CLEAN') {
+        setUploadSuccess('File uploaded to quarantine and verified CLEAN by antivirus scanner.');
+      } else if (uploadData.scanStatus === 'INFECTED') {
+        setUploadError('Warning: File uploaded but flagged as INFECTED by antivirus scanner.');
+      } else if (uploadData.scanStatus === 'SCAN_FAILED') {
+        setUploadError('Antivirus scan failed to evaluate this file.');
+      } else {
+        setUploadSuccess('File uploaded to quarantine successfully.');
+      }
+
       setSelectedFile(null);
       await fetchWorkspaceData();
     } catch (err: unknown) {
@@ -1075,6 +1101,10 @@ export default function DisclosureWorkspacePage() {
                               <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-800">
                                 <span className="w-1.5 h-1.5 mr-1.5 rounded-full bg-amber-500 animate-pulse" />
                                 PENDING SCAN
+                              </span>
+                            ) : att.scanStatus === 'SCAN_FAILED' ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-orange-100 text-orange-800">
+                                SCAN FAILED
                               </span>
                             ) : (
                               <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-800">

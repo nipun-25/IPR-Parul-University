@@ -83,6 +83,12 @@ const BFF_ROUTE_WHITELIST: readonly RouteWhitelistRule[] = [
     mapToBackendPath: () => '/api/v1/attachments'
   },
   {
+    regex: /^\/attachments\/([a-zA-Z0-9-]+)\/upload$/,
+    method: 'POST',
+    scope: 'OP_UPLOAD_ATTACHMENT',
+    mapToBackendPath: (m) => `/api/v1/attachments/${m[1]}/upload`
+  },
+  {
     regex: /^\/consent\/request$/,
     method: 'POST',
     scope: 'OP_CREATE_CONSENT',
@@ -242,17 +248,21 @@ export class BffForwarder {
       );
     }
 
-    // 5. Read body bytes and enforce maximum payload size (1MB)
+    // 5. Read body bytes and enforce maximum payload size (1MB default, 25MB for attachment upload)
     let bodyBytes = Buffer.alloc(0);
     if (['POST', 'PUT', 'PATCH'].includes(method)) {
       const arrayBuf = await request.arrayBuffer();
       bodyBytes = Buffer.from(arrayBuf);
-      if (bodyBytes.length > 1048576) {
+      const isUpload = matchedRule.scope === 'OP_UPLOAD_ATTACHMENT' && normalizedSubpath.endsWith('/upload');
+      const maxPayloadBytes = isUpload ? 26214400 : 1048576;
+      if (bodyBytes.length > maxPayloadBytes) {
         return createProblemResponse(
           413,
           'PAYLOAD_TOO_LARGE',
           'Payload Exceeds Limit',
-          'Request payload exceeds the maximum 1MB boundary limit.',
+          isUpload
+            ? 'Request payload exceeds the maximum 25MB boundary limit.'
+            : 'Request payload exceeds the maximum 1MB boundary limit.',
           url.pathname
         );
       }

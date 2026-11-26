@@ -268,4 +268,78 @@ describe('Next.js BFF Security Boundary & Forwarder (Gate A2)', () => {
       expect(invalidRes.status).toBe(401);
     });
   });
+
+  describe('Attachment Upload Whitelisting and 25MB Payload Limits', () => {
+    it('forwards POST /attachments/:id/upload with OP_UPLOAD_ATTACHMENT and handles > 1MB payload', async () => {
+      const validCsrfToken = generateCsrfToken(mockSession.sessionId, csrfSecret);
+      const attachmentId = 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d';
+      // 1.5 MB body (exceeds standard 1MB JSON limit, but within 25MB attachment upload limit)
+      const largeFileBuffer = Buffer.alloc(1.5 * 1024 * 1024, 0x41);
+
+      const req = new Request(`http://localhost:3000/api/bff/attachments/${attachmentId}/upload`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/pdf',
+          'X-CSRF-Token': validCsrfToken
+        },
+        body: largeFileBuffer
+      });
+
+      const res = await forwarder.forwardRequest(req, `/attachments/${attachmentId}/upload`);
+      expect(res.status).toBe(200);
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [calledUrl, calledInit] = fetchMock.mock.calls[0];
+      expect(calledUrl).toBe(`http://localhost:4000/api/v1/attachments/${attachmentId}/upload`);
+      expect(calledInit.headers['X-BFF-Operation-Scope']).toBe('OP_UPLOAD_ATTACHMENT');
+      expect(calledInit.headers['X-BFF-Actor-ID']).toBe(mockSession.actorId);
+    });
+
+    it('rejects POST /attachments/:id/upload exceeding 25MB boundary limit (413 Payload Too Large)', async () => {
+      const validCsrfToken = generateCsrfToken(mockSession.sessionId, csrfSecret);
+      const attachmentId = 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d';
+      // 26MB body
+      const oversizedBuffer = Buffer.alloc(26 * 1024 * 1024, 0x41);
+
+      const req = new Request(`http://localhost:3000/api/bff/attachments/${attachmentId}/upload`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/pdf',
+          'X-CSRF-Token': validCsrfToken
+        },
+        body: oversizedBuffer
+      });
+
+      const res = await forwarder.forwardRequest(req, `/attachments/${attachmentId}/upload`);
+      expect(res.status).toBe(413);
+
+      const body = await res.json();
+      expect(body.code).toBe('PAYLOAD_TOO_LARGE');
+      expect(body.detail).toContain('25MB');
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('rejects non-upload state-changing requests exceeding standard 1MB boundary limit (413 Payload Too Large)', async () => {
+      const validCsrfToken = generateCsrfToken(mockSession.sessionId, csrfSecret);
+      // 1.5MB JSON on /drafts
+      const oversizedJson = Buffer.alloc(1.5 * 1024 * 1024, 0x61);
+
+      const req = new Request('http://localhost:3000/api/bff/drafts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': validCsrfToken
+        },
+        body: oversizedJson
+      });
+
+      const res = await forwarder.forwardRequest(req, '/drafts');
+      expect(res.status).toBe(413);
+
+      const body = await res.json();
+      expect(body.code).toBe('PAYLOAD_TOO_LARGE');
+      expect(body.detail).toContain('1MB');
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
 });

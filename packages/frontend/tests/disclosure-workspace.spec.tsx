@@ -366,4 +366,110 @@ describe('Stage 2G — Student Disclosure Workspace Component', () => {
     const titleInput = container.querySelector('input[type="text"]') as HTMLInputElement;
     expect(titleInput?.disabled).toBe(true);
   });
+
+  it('renders all attachment scan status badges (CLEAN, PENDING_SCAN, SCAN_FAILED, INFECTED) and blocks submission when not CLEAN', async () => {
+    const mixedAttachments = [
+      {
+        id: 'a1111111-1111-1111-1111-111111111111',
+        disclosureId: mockDisclosureId,
+        fileName: 'spec.pdf',
+        fileSizeBytes: 102400,
+        mimeType: 'application/pdf',
+        sha256Hash: '1111111111111111111111111111111111111111111111111111111111111111',
+        scanStatus: 'CLEAN',
+        createdAt: '2026-11-26T10:00:00.000Z'
+      },
+      {
+        id: 'a2222222-2222-2222-2222-222222222222',
+        disclosureId: mockDisclosureId,
+        fileName: 'pending.png',
+        fileSizeBytes: 51200,
+        mimeType: 'image/png',
+        sha256Hash: '2222222222222222222222222222222222222222222222222222222222222222',
+        scanStatus: 'PENDING_SCAN',
+        createdAt: '2026-11-26T10:01:00.000Z'
+      },
+      {
+        id: 'a3333333-3333-3333-3333-333333333333',
+        disclosureId: mockDisclosureId,
+        fileName: 'error.zip',
+        fileSizeBytes: 204800,
+        mimeType: 'application/zip',
+        sha256Hash: '3333333333333333333333333333333333333333333333333333333333333333',
+        scanStatus: 'SCAN_FAILED',
+        createdAt: '2026-11-26T10:02:00.000Z'
+      },
+      {
+        id: 'a4444444-4444-4444-4444-444444444444',
+        disclosureId: mockDisclosureId,
+        fileName: 'threat.pdf',
+        fileSizeBytes: 81920,
+        mimeType: 'application/pdf',
+        sha256Hash: '4444444444444444444444444444444444444444444444444444444444444444',
+        scanStatus: 'INFECTED',
+        createdAt: '2026-11-26T10:03:00.000Z'
+      }
+    ];
+
+    const fetchMock = vi.fn().mockImplementation(async (url: string) => {
+      if (url.includes('/api/v1/auth/session')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            authenticated: true,
+            user: mockUser,
+            csrfToken: mockCsrfToken
+          })
+        };
+      }
+      if (url.includes(`/api/bff/disclosures/${mockDisclosureId}/consents`)) {
+        return { ok: true, status: 200, json: async () => ({ consents: sampleConsents }) };
+      }
+      if (url.includes(`/api/bff/disclosures/${mockDisclosureId}/attachments`)) {
+        return { ok: true, status: 200, json: async () => ({ attachments: mixedAttachments }) };
+      }
+      if (url.includes(`/api/bff/disclosures/${mockDisclosureId}`)) {
+        return { ok: true, status: 200, json: async () => ({ disclosure: draftDisclosure }) };
+      }
+      throw new Error(`Unexpected url: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<DisclosureWorkspacePage />);
+    });
+
+    await act(async () => {
+      await flushPromises();
+    });
+
+    // Switch to Attachments Tab
+    const attTabBtn = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('3. Attachments & AV Scans')
+    );
+    await act(async () => {
+      attTabBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain('CLEAN');
+    expect(container.textContent).toContain('PENDING SCAN');
+    expect(container.textContent).toContain('SCAN FAILED');
+    expect(container.textContent).toContain('INFECTED');
+
+    // Switch to Submission Tab - submission must be disabled because of non-CLEAN files
+    const submitTabBtn = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('4. Submission & Tracking')
+    );
+    await act(async () => {
+      submitTabBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const submitButton = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('Submit Invention Disclosure')
+    );
+    expect(submitButton?.disabled).toBe(true);
+    expect(container.textContent).toContain('Pending Scan');
+  });
 });
