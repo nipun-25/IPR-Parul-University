@@ -197,4 +197,82 @@ describe('Stage 2F.3 — Frontend Login Component', () => {
     expect(errorEl).not.toBeNull();
     expect(errorEl?.textContent).toContain('Invalid institutional email or password');
   });
+
+  it('submits logout with CSRF token and restores idle state', async () => {
+    const fetchMock = vi.fn().mockImplementation(async (url: string) => {
+      if (url.includes('/api/v1/auth/csrf')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ csrfToken: mockCsrfToken })
+        };
+      }
+      if (url.includes('/api/v1/auth/login')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            csrfToken: mockCsrfToken,
+            user: {
+              id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+              email: 'student.test@paruluniversity.ac.in',
+              fullName: 'Jane Doe',
+              activeRoles: ['Student']
+            }
+          })
+        };
+      }
+      if (url.includes('/api/v1/auth/logout')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ success: true })
+        };
+      }
+      throw new Error(`Unexpected url: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<LoginPage />);
+    });
+
+    const emailInput = container.querySelector('[data-testid="email-input"]') as HTMLInputElement;
+    const passwordInput = container.querySelector('[data-testid="password-input"]') as HTMLInputElement;
+    const form = container.querySelector('[data-testid="login-form"]') as HTMLFormElement;
+
+    await act(async () => {
+      emailInput.value = 'student.test@paruluniversity.ac.in';
+      emailInput.dispatchEvent(new Event('input', { bubbles: true }));
+      (emailInput as unknown as { _valueTracker?: { setValue: (v: string) => void } })._valueTracker?.setValue('');
+      emailInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+      passwordInput.value = 'ValidPass123!';
+      passwordInput.dispatchEvent(new Event('input', { bubbles: true }));
+      (passwordInput as unknown as { _valueTracker?: { setValue: (v: string) => void } })._valueTracker?.setValue('');
+      passwordInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    const logoutButton = container.querySelector('[data-testid="logout-button"]') as HTMLButtonElement;
+    expect(logoutButton).not.toBeNull();
+
+    await act(async () => {
+      logoutButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const logoutCall = fetchMock.mock.calls[2];
+    expect(logoutCall[0]).toContain('/api/v1/auth/logout');
+    expect(logoutCall[1].method).toBe('POST');
+    expect(logoutCall[1].credentials).toBe('include');
+    expect(logoutCall[1].headers['X-CSRF-Token']).toBe(mockCsrfToken);
+    expect(logoutCall[1].headers['Content-Type']).toBe('application/json');
+
+    // Idle state restored
+    expect(container.querySelector('[data-testid="login-form"]')).not.toBeNull();
+  });
 });

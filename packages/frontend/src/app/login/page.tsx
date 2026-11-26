@@ -14,6 +14,7 @@ export default function LoginPage() {
     email: string;
     activeRoles: string[];
   } | null>(null);
+  const [activeCsrfToken, setActiveCsrfToken] = useState<string>('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,6 +53,7 @@ export default function LoginPage() {
       if (!csrfToken || typeof csrfToken !== 'string') {
         throw new Error('INVALID_CSRF_TOKEN');
       }
+      setActiveCsrfToken(csrfToken);
 
       // 2. Submit credentials with CSRF token in memory and credentials: 'include'
       const res = await fetch(`${backendUrl}/api/v1/auth/login`, {
@@ -69,6 +71,9 @@ export default function LoginPage() {
       if (res.ok && data.success) {
         setStatus('success');
         setLoggedInUser(data.user);
+        if (data.csrfToken) {
+          setActiveCsrfToken(data.csrfToken);
+        }
       } else if (res.status === 429) {
         setStatus('error');
         setErrorMessage(data.detail || 'Too many login attempts from this IP. Please try again after 15 minutes.');
@@ -86,14 +91,31 @@ export default function LoginPage() {
   const handleLogout = async () => {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000';
     try {
+      let token = activeCsrfToken;
+      if (!token) {
+        const csrfRes = await fetch(`${backendUrl}/api/v1/auth/csrf`, {
+          method: 'GET',
+          credentials: 'include'
+        });
+        if (csrfRes.ok) {
+          const csrfData = await csrfRes.json();
+          token = csrfData.csrfToken;
+        }
+      }
+
       await fetch(`${backendUrl}/api/v1/auth/logout`, {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'X-CSRF-Token': token } : {})
+        },
         credentials: 'include'
       });
     } finally {
       setStatus('idle');
       setLoggedInUser(null);
       setPassword('');
+      setActiveCsrfToken('');
     }
   };
 

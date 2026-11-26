@@ -298,13 +298,15 @@ describe('Stage 2F.3 — Student Login & Session Lifecycle', () => {
   describe('3. Logout & Session Revocation (POST /api/v1/auth/logout)', () => {
     const rawSessionToken = '11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff';
 
-    it('revokes server-side session in database and clears session cookie', async () => {
+    it('revokes server-side session in database and clears session cookie with valid CSRF token', async () => {
       mockPool.query.mockResolvedValueOnce({ rows: [{ revoke_user_session_v1: true }] });
 
       const res = await request(app)
         .post('/api/v1/auth/logout')
         .set('Origin', 'http://localhost:3000')
-        .set('Cookie', `ipr_session=${rawSessionToken}`)
+        .set('Content-Type', 'application/json')
+        .set('X-CSRF-Token', defaultCsrfToken)
+        .set('Cookie', `${defaultCsrfCookie}; ipr_session=${rawSessionToken}`)
         .expect(200);
 
       expect(res.body.success).toBe(true);
@@ -318,10 +320,48 @@ describe('Stage 2F.3 — Student Login & Session Lifecycle', () => {
       const sessionCookie = cookies.find((c: string) => c.startsWith('ipr_session='));
       expect(sessionCookie).toContain('Max-Age=0');
     });
+
+    it('rejects logout requests with missing CSRF token', async () => {
+      const res = await request(app)
+        .post('/api/v1/auth/logout')
+        .set('Origin', 'http://localhost:3000')
+        .set('Content-Type', 'application/json')
+        .set('Cookie', `${defaultCsrfCookie}; ipr_session=${rawSessionToken}`)
+        .expect(403);
+
+      expect(res.body.code).toBe('CSRF_TOKEN_MISSING');
+      expect(mockPool.query).not.toHaveBeenCalled();
+    });
+
+    it('rejects logout requests with missing CSRF cookie', async () => {
+      const res = await request(app)
+        .post('/api/v1/auth/logout')
+        .set('Origin', 'http://localhost:3000')
+        .set('Content-Type', 'application/json')
+        .set('X-CSRF-Token', defaultCsrfToken)
+        .set('Cookie', `ipr_session=${rawSessionToken}`)
+        .expect(403);
+
+      expect(res.body.code).toBe('CSRF_COOKIE_MISSING');
+      expect(mockPool.query).not.toHaveBeenCalled();
+    });
+
+    it('rejects logout requests with invalid CSRF token', async () => {
+      const res = await request(app)
+        .post('/api/v1/auth/logout')
+        .set('Origin', 'http://localhost:3000')
+        .set('Content-Type', 'application/json')
+        .set('X-CSRF-Token', '0000000000000000000000000000000000000000000000000000000000000000')
+        .set('Cookie', `${defaultCsrfCookie}; ipr_session=${rawSessionToken}`)
+        .expect(403);
+
+      expect(res.body.code).toBe('CSRF_TOKEN_INVALID');
+      expect(mockPool.query).not.toHaveBeenCalled();
+    });
   });
 
   describe('4. Security Controls & Protections', () => {
-    it('rejects login requests with missing or untrusted Origin header', async () => {
+    it('rejects login requests with untrusted Origin header', async () => {
       const res = await request(app)
         .post('/api/v1/auth/login')
         .set('Origin', 'http://evil.com')
@@ -331,6 +371,19 @@ describe('Stage 2F.3 — Student Login & Session Lifecycle', () => {
         .expect(403);
 
       expect(res.body.code).toBe('ORIGIN_FORBIDDEN');
+      expect(mockPool.query).not.toHaveBeenCalled();
+    });
+
+    it('rejects login requests with missing Origin header', async () => {
+      const res = await request(app)
+        .post('/api/v1/auth/login')
+        .set('X-CSRF-Token', defaultCsrfToken)
+        .set('Cookie', defaultCsrfCookie)
+        .send({ email: validEmail, password: rawPassword })
+        .expect(403);
+
+      expect(res.body.code).toBe('ORIGIN_FORBIDDEN');
+      expect(res.body.detail).toContain('Missing Origin header');
       expect(mockPool.query).not.toHaveBeenCalled();
     });
 
@@ -344,6 +397,80 @@ describe('Stage 2F.3 — Student Login & Session Lifecycle', () => {
 
       expect(res.body.code).toBe('CSRF_TOKEN_MISSING');
       expect(mockPool.query).not.toHaveBeenCalled();
+    });
+
+    it('rejects login requests with invalid CSRF token', async () => {
+      const res = await request(app)
+        .post('/api/v1/auth/login')
+        .set('Origin', 'http://localhost:3000')
+        .set('X-CSRF-Token', '0000000000000000000000000000000000000000000000000000000000000000')
+        .set('Cookie', defaultCsrfCookie)
+        .send({ email: validEmail, password: rawPassword })
+        .expect(403);
+
+      expect(res.body.code).toBe('CSRF_TOKEN_INVALID');
+      expect(mockPool.query).not.toHaveBeenCalled();
+    });
+
+    it('rejects logout requests with missing Origin header', async () => {
+      const res = await request(app)
+        .post('/api/v1/auth/logout')
+        .expect(403);
+
+      expect(res.body.code).toBe('ORIGIN_FORBIDDEN');
+      expect(res.body.detail).toContain('Missing Origin header');
+      expect(mockPool.query).not.toHaveBeenCalled();
+    });
+
+    it('rejects logout requests with untrusted Origin header', async () => {
+      const res = await request(app)
+        .post('/api/v1/auth/logout')
+        .set('Origin', 'http://evil.com')
+        .expect(403);
+
+      expect(res.body.code).toBe('ORIGIN_FORBIDDEN');
+      expect(mockPool.query).not.toHaveBeenCalled();
+    });
+
+    it('enforces IP rate limiting on login for unknown institutional email addresses', async () => {
+      const rateLimitedApp = createApp(testEnv, {
+        dbPool: mockPool as unknown as Pool,
+        emailService: mockEmailService as unknown as EmailService,
+        loginRateLimitMax: 2,
+        csrfRateLimitMax: 100
+      });
+
+      mockPool.query.mockResolvedValue({ rows: [] });
+
+      // Request 1 with unknown institutional email
+      await request(rateLimitedApp)
+        .post('/api/v1/auth/login')
+        .set('Origin', 'http://localhost:3000')
+        .set('X-CSRF-Token', defaultCsrfToken)
+        .set('Cookie', defaultCsrfCookie)
+        .send({ email: 'unknown1@paruluniversity.ac.in', password: 'password123' })
+        .expect(401);
+
+      // Request 2 with another unknown institutional email
+      await request(rateLimitedApp)
+        .post('/api/v1/auth/login')
+        .set('Origin', 'http://localhost:3000')
+        .set('X-CSRF-Token', defaultCsrfToken)
+        .set('Cookie', defaultCsrfCookie)
+        .send({ email: 'unknown2@paruluniversity.ac.in', password: 'password123' })
+        .expect(401);
+
+      // Request 3: IP rate limiter triggers 429
+      const res = await request(rateLimitedApp)
+        .post('/api/v1/auth/login')
+        .set('Origin', 'http://localhost:3000')
+        .set('X-CSRF-Token', defaultCsrfToken)
+        .set('Cookie', defaultCsrfCookie)
+        .send({ email: 'unknown3@paruluniversity.ac.in', password: 'password123' })
+        .expect(429);
+
+      expect(res.body.code).toBe('LOGIN_RATE_LIMIT_EXCEEDED');
+      expect(res.headers['retry-after']).toBeDefined();
     });
 
     it('enforces IP rate limiting on login when exceeding limit', async () => {

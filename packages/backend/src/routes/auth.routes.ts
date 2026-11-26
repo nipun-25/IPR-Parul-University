@@ -126,6 +126,7 @@ export function createAuthRouter(options: AuthRouterOptions): Router {
   router.post(
     '/logout',
     originValidator,
+    preAuthCsrfMiddleware,
     logoutHandler(options.dbPool, options.authService, options.isProduction ?? false)
   );
 
