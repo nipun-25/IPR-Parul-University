@@ -44,7 +44,7 @@ describe('CSRF Synchronizer Token Protection (Gate A2)', () => {
   it('rejects a token with tampered HMAC bytes', () => {
     const token = generateCsrfToken(sessionId, testSecret);
     const [salt, hmac] = token.split('.');
-    const tamperedHmac = hmac.slice(0, -2) + '00';
+    const tamperedHmac = hmac.slice(0, -2) + (hmac.endsWith('00') ? 'ff' : '00');
     const tamperedToken = `${salt}.${tamperedHmac}`;
 
     const isValid = verifyCsrfToken(tamperedToken, sessionId, testSecret);

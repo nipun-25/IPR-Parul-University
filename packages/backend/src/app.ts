@@ -12,23 +12,43 @@ import { globalErrorHandler, AppError } from './middleware/error-handler.middlew
 import { createBffAssertionMiddleware } from './middleware/bff-assertion.middleware.js';
 import { createDraftHandler, updateDraftHandler, submitDraftHandler } from './controllers/draft.controller.js';
 import { getDisclosureHandler } from './controllers/disclosure.controller.js';
+import { createAuthRouter } from './routes/auth.routes.js';
+import { EmailService } from './services/email.service.js';
+import { AuthService } from './services/auth.service.js';
 import { BackendEnv } from './config/env.config.js';
+import { parseTrustProxy } from './utils/proxy.util.js';
 
 export interface CreateAppOptions {
   readonly nonceStore?: INonceStore;
   readonly allowedClockSkewSeconds?: number;
   readonly resourceAuthProvider?: IResourceAuthorizationProvider;
   readonly dbPool?: Pool;
+  readonly emailService?: EmailService;
+  readonly authService?: AuthService;
+  readonly registerRateLimitMax?: number;
+  readonly verifyRateLimitMax?: number;
+  readonly trustProxy?: boolean | string | number | string[];
 }
 
 export function createApp(env: BackendEnv, options?: CreateAppOptions): Express {
   const app: Express = express();
   const nonceStore = options?.nonceStore ?? new InMemoryNonceStore();
 
+  // Configure Express Trust Proxy
+  // Controls whether Express trusts X-Forwarded-* headers when resolving req.ip.
+  // When false (default), req.ip is the direct socket remote address, preventing header spoofing.
+  // When configured with trusted IPs/subnets, X-Forwarded-For is trusted ONLY when the immediate
+  // connection arrives from a trusted proxy.
+  const trustProxySetting = options?.trustProxy !== undefined
+    ? parseTrustProxy(options.trustProxy)
+    : parseTrustProxy(env.TRUST_PROXY);
+  app.set('trust proxy', trustProxySetting);
+
   // Standard Security Headers
   app.use(helmet({
     contentSecurityPolicy: true,
-    crossOriginEmbedderPolicy: true
+    crossOriginEmbedderPolicy: true,
+    referrerPolicy: { policy: 'no-referrer' }
   }));
 
   // CORS Policy
@@ -149,6 +169,17 @@ export function createApp(env: BackendEnv, options?: CreateAppOptions): Express 
 
   // View Disclosure (Gate P2 Stage 2C)
   protectedApiRouter.get('/disclosures/:id', getDisclosureHandler(options?.dbPool));
+
+  // Public Authentication Endpoints (Registration & Email Verification - Gate P2 Stage 2F)
+  const authRouter = createAuthRouter({
+    dbPool: options?.dbPool,
+    emailService: options?.emailService ?? (env.SMTP_USER ? new EmailService(env) : undefined),
+    corsOrigin: env.CORS_ORIGIN,
+    authService: options?.authService,
+    registerRateLimitMax: options?.registerRateLimitMax ?? (env.NODE_ENV === 'test' ? 1000 : 5),
+    verifyRateLimitMax: options?.verifyRateLimitMax ?? (env.NODE_ENV === 'test' ? 1000 : 10)
+  });
+  app.use('/api/v1/auth', authRouter);
 
   // Mount the centralized protected router under /api/v1
   app.use('/api/v1', protectedApiRouter);

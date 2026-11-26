@@ -16,6 +16,7 @@ describe('Backend Environment Configuration (Gate A1)', () => {
     const parsed = parseEnv(validBaseEnv);
     expect(parsed.PORT).toBe(4000);
     expect(parsed.NODE_ENV).toBe('test');
+    expect(parsed.TRUST_PROXY ?? 'false').toBe('false');
     expect(parsed.BFF_SHARED_SECRET).toBe(validBaseEnv.BFF_SHARED_SECRET);
     expect(parsed.SMTP_USER).toBe('test-mailer@paruluniversity.ac.in');
   });
@@ -51,5 +52,28 @@ describe('Backend Environment Configuration (Gate A1)', () => {
       DB_SSL_CA_PATH: '/non/existent/path/ca.crt'
     };
     expect(() => parseEnv(prodWithoutCa)).toThrow('DB_SSL_CA_PATH file does not exist');
+  });
+
+  it('rejects production environment when TRUST_PROXY is set to blind "true"', () => {
+    const prodBlindTrust = {
+      ...validBaseEnv,
+      NODE_ENV: 'production',
+      DB_SSL: 'true',
+      DB_SSL_CA_PATH: 'package.json', // Existing file for test
+      TRUST_PROXY: 'true'
+    };
+    expect(() => parseEnv(prodBlindTrust)).toThrow('TRUST_PROXY must not be set to blind "true"');
+  });
+
+  it('accepts explicit trusted proxy configuration in production', () => {
+    const prodExplicitProxy = {
+      ...validBaseEnv,
+      NODE_ENV: 'production',
+      DB_SSL: 'true',
+      DB_SSL_CA_PATH: 'package.json',
+      TRUST_PROXY: 'loopback, 10.0.0.0/8'
+    };
+    const parsed = parseEnv(prodExplicitProxy);
+    expect(parsed.TRUST_PROXY).toBe('loopback, 10.0.0.0/8');
   });
 });

@@ -12,6 +12,13 @@ export const BackendEnvSchema = z.object({
   // Inter-Service BFF Security
   BFF_SHARED_SECRET: z.string().min(64, 'BFF_SHARED_SECRET must be at least 64 characters long'),
 
+  // Proxy Trust Configuration
+  // undefined / 'false' (default): direct connection (local dev). Express ignores X-Forwarded-* headers.
+  // Can be set to an IP, CIDR subnet, preconfigured subnet ('loopback', 'linklocal', 'uniquelocal'),
+  // or a comma-separated list of trusted proxy IPs/subnets (e.g. '127.0.0.1, 10.0.0.0/8').
+  // Blind 'true' is rejected in production to prevent IP spoofing vulnerabilities.
+  TRUST_PROXY: z.string().optional(),
+
   // PostgreSQL Connection & TLS configuration
   DB_HOST: z.string().default('localhost'),
   DB_PORT: z.coerce.number().int().positive().default(5432),
@@ -28,6 +35,13 @@ export const BackendEnvSchema = z.object({
   SMTP_PASSWORD: z.string().min(1, 'SMTP_PASSWORD is required'),
 }).superRefine((data, ctx) => {
   if (data.NODE_ENV === 'production') {
+    if (data.TRUST_PROXY && data.TRUST_PROXY.trim().toLowerCase() === 'true') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'In production, TRUST_PROXY must not be set to blind "true". Specify explicit trusted proxy IPs, CIDR ranges, or subnets (e.g., "loopback", "10.0.0.0/8").',
+        path: ['TRUST_PROXY']
+      });
+    }
     if (!data.DB_SSL) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

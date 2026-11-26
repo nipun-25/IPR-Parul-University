@@ -1,5 +1,6 @@
 import React from 'react';
 import './globals.css';
+import { PRE_HYDRATION_TOKEN_SCRUBBER_SCRIPT } from '../utils/token-scrubber';
 
 export const metadata = {
   title: 'Parul University IPR Portal',
@@ -13,6 +14,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
+      <head>
+        <script
+          id="pre-hydration-token-scrubber"
+          dangerouslySetInnerHTML={{ __html: PRE_HYDRATION_TOKEN_SCRUBBER_SCRIPT }}
+        />
+      </head>
       <body>
         <main>{children}</main>
       </body>
