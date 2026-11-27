@@ -227,7 +227,15 @@ export default function LoginPage() {
               {status === 'submitting' ? 'Signing in...' : 'Log In'}
             </button>
 
-            <div className="pt-2 text-center text-xs text-gray-500 space-y-1">
+            <div className="pt-2 text-center text-xs text-gray-500 space-y-2">
+              <div className="flex justify-between items-center text-xs pt-1">
+                <Link href="/register" className="text-blue-600 hover:underline font-medium">
+                  Create student account
+                </Link>
+                <Link href="/forgot-password" className="text-gray-500 hover:text-gray-800">
+                  Forgot password?
+                </Link>
+              </div>
               <p>
                 Need to verify your email?{' '}
                 <a href="/verify-email" className="text-blue-600 underline">
@@ -240,6 +248,20 @@ export default function LoginPage() {
                   Resend link
                 </a>
               </p>
+
+              {/* Demo Portal Navigation Pills */}
+              <div className="pt-3 border-t border-gray-100">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-2">
+                  Preview Portals Demo Mode
+                </p>
+                <div className="flex flex-wrap justify-center gap-1.5 text-[11px]">
+                  <Link href="/student/dashboard" className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium">Student</Link>
+                  <Link href="/faculty/dashboard" className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-medium">Faculty</Link>
+                  <Link href="/reviewer/dashboard" className="px-2 py-0.5 rounded bg-purple-50 text-purple-700 hover:bg-purple-100 font-medium">Reviewer</Link>
+                  <Link href="/legal/dashboard" className="px-2 py-0.5 rounded bg-amber-50 text-amber-700 hover:bg-amber-100 font-medium">Legal</Link>
+                  <Link href="/admin/dashboard" className="px-2 py-0.5 rounded bg-rose-50 text-rose-700 hover:bg-rose-100 font-medium">Admin</Link>
+                </div>
+              </div>
             </div>
           </form>
         )}
