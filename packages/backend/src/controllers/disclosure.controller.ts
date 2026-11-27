@@ -5,6 +5,7 @@ import {
   CreateConsentRequestSchema,
   RevokeConsentSchema,
   CancelConsentInvitationSchema,
+  VerifyConsentSchema,
   DisclosureListItemDto,
   InventorConsentItemDto,
   AttachmentItemDto
@@ -737,6 +738,107 @@ export function cancelConsentInvitationHandler(dbPool?: Pool) {
           code: 'RESOURCE_NOT_FOUND',
           title: 'Resource Not Found',
           detail: 'Consent record does not exist.'
+        }));
+      }
+
+      if (isDatabaseUnavailable(err)) {
+        return next(new AppError({
+          statusCode: 503,
+          code: 'DATABASE_UNAVAILABLE',
+          title: 'Database Unavailable',
+          detail: 'Database connection failed or service is temporarily unavailable.'
+        }));
+      }
+
+      next(err);
+    }
+  };
+}
+
+export function verifyConsentHandler(dbPool?: Pool) {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      if (!dbPool) {
+        throw new AppError({
+          statusCode: 503,
+          code: 'DATABASE_UNAVAILABLE',
+          title: 'Database Unavailable',
+          detail: 'Database connection pool is not configured.'
+        });
+      }
+
+      if (!req.assertion) {
+        throw new AppError({
+          statusCode: 401,
+          code: 'BFF_ASSERTION_MISSING',
+          title: 'Missing Request Assertion',
+          detail: 'Verified request assertion is required to verify inventor consent.'
+        });
+      }
+
+      const parseResult = VerifyConsentSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        throw parseResult.error;
+      }
+
+      const { consentId, evidenceAttachmentId, verificationNotes } = parseResult.data;
+
+      await dbPool.query(
+        'SELECT public.verify_inventor_consent_v1($1::jsonb, $2::uuid, $3::text, $4::uuid)',
+        [JSON.stringify(req.assertion), consentId, verificationNotes || 'Institutional consent verified', evidenceAttachmentId]
+      );
+
+      res.status(200).json({
+        success: true,
+        consentId,
+        message: 'Inventor consent verified successfully'
+      });
+    } catch (err: unknown) {
+      const errRecord = (typeof err === 'object' && err !== null) ? (err as Record<string, unknown>) : {};
+      const errMsg = typeof errRecord.message === 'string' ? errRecord.message : '';
+
+      if (errMsg.includes('FORBIDDEN') || errRecord.code === '42501' || errMsg.includes('insufficient_privilege')) {
+        return next(new AppError({
+          statusCode: 403,
+          code: 'CONSENT_VERIFICATION_FORBIDDEN',
+          title: 'Forbidden Verification',
+          detail: 'Only institutional Administrators may verify inventor consent.'
+        }));
+      }
+
+      if (errMsg.includes('INVALID_STATE')) {
+        return next(new AppError({
+          statusCode: 422,
+          code: 'INVALID_WORKFLOW_STATE',
+          title: 'Invalid State',
+          detail: 'Only PENDING consents may be verified.'
+        }));
+      }
+
+      if (errMsg.includes('SECURITY_VIOLATION')) {
+        return next(new AppError({
+          statusCode: 422,
+          code: 'INVALID_EVIDENCE',
+          title: 'Invalid Evidence Attachment',
+          detail: errMsg.replace(/^[^:]*:\s*/, '') || 'Evidence attachment is invalid, not clean, or already bound.'
+        }));
+      }
+
+      if (errMsg.includes('VALIDATION_FAILED')) {
+        return next(new AppError({
+          statusCode: 400,
+          code: 'VALIDATION_FAILED',
+          title: 'Validation Failed',
+          detail: errMsg.replace(/^[^:]*:\s*/, '') || 'Verification requires a valid signature or consent evidence attachment.'
+        }));
+      }
+
+      if (errMsg.includes('NOT_FOUND') || errRecord.code === 'P0002') {
+        return next(new AppError({
+          statusCode: 404,
+          code: 'RESOURCE_NOT_FOUND',
+          title: 'Resource Not Found',
+          detail: errMsg.includes('Evidence attachment') ? 'Evidence attachment does not exist.' : 'Consent record does not exist.'
         }));
       }
 

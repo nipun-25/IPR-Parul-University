@@ -6,6 +6,16 @@ import LoginPage from '../src/app/login/page';
 // Mark environment for React act support
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+const pushMock = vi.fn();
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: pushMock,
+    replace: vi.fn(),
+    prefetch: vi.fn(),
+    back: vi.fn()
+  })
+}));
+
 describe('Stage 2F.3 — Frontend Login Component', () => {
   let container: HTMLDivElement;
   let root: Root | null = null;
@@ -145,6 +155,7 @@ describe('Stage 2F.3 — Frontend Login Component', () => {
     expect(successEl).not.toBeNull();
     expect(successEl?.textContent).toContain('Welcome back, Jane Doe!');
     expect(successEl?.textContent).toContain('Active Roles: Student');
+    expect(pushMock).toHaveBeenCalledWith('/dashboard');
   });
 
   it('displays generic invalid credentials on 401 error', async () => {

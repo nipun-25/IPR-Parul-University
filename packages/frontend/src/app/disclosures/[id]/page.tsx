@@ -72,6 +72,14 @@ export default function DisclosureWorkspacePage() {
   const [uploadError, setUploadError] = useState<string>('');
   const [uploadSuccess, setUploadSuccess] = useState<string>('');
 
+  // Consent Verification State (Admin action)
+  const [verifyingConsentId, setVerifyingConsentId] = useState<string | null>(null);
+  const [selectedEvidenceAttachmentId, setSelectedEvidenceAttachmentId] = useState<string>('');
+  const [verificationNotes, setVerificationNotes] = useState<string>('Institutional consent verified');
+  const [verifyingConsent, setVerifyingConsent] = useState<boolean>(false);
+  const [verifyError, setVerifyError] = useState<string>('');
+  const [verifySuccess, setVerifySuccess] = useState<string>('');
+
   // Submission State
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [submitError, setSubmitError] = useState<string>('');
@@ -279,6 +287,79 @@ export default function DisclosureWorkspacePage() {
     }
   };
 
+  // Handle Cancel Consent Invitation (Primary Inventor only)
+  const handleCancelConsent = async (consentId: string) => {
+    if (disclosure?.status !== 'DRAFT') return;
+    if (!confirm('Are you sure you want to cancel this pending consent invitation?')) return;
+
+    try {
+      const res = await fetch('/api/bff/consent/cancel', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': csrfToken
+        },
+        credentials: 'include',
+        body: JSON.stringify({ consentId })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.detail || data.message || 'Failed to cancel consent invitation.');
+        return;
+      }
+
+      await fetchWorkspaceData();
+    } catch {
+      alert('Network failure while cancelling consent invitation.');
+    }
+  };
+
+  // Handle Verify Consent (Institutional Administrator only)
+  const handleVerifyConsent = async (consentId: string) => {
+    if (!selectedEvidenceAttachmentId) {
+      setVerifyError('Please select a clean evidence attachment to bind to this verification.');
+      return;
+    }
+
+    setVerifyingConsent(true);
+    setVerifyError('');
+    setVerifySuccess('');
+
+    try {
+      const res = await fetch('/api/bff/consent/verify', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': csrfToken
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          consentId,
+          evidenceAttachmentId: selectedEvidenceAttachmentId,
+          verificationNotes: verificationNotes.trim() || 'Institutional consent verified'
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setVerifyError(data.detail || data.message || 'Failed to verify consent.');
+        setVerifyingConsent(false);
+        return;
+      }
+
+      setVerifySuccess('Inventor consent verified successfully.');
+      setVerifyingConsentId(null);
+      setSelectedEvidenceAttachmentId('');
+      setVerificationNotes('Institutional consent verified');
+      await fetchWorkspaceData();
+    } catch {
+      setVerifyError('Network failure while verifying consent.');
+    } finally {
+      setVerifyingConsent(false);
+    }
+  };
+
   // Helper to compute SHA-256 hash in browser
   const computeFileSha256 = async (file: File): Promise<string> => {
     const arrayBuffer = await file.arrayBuffer();
@@ -436,12 +517,11 @@ export default function DisclosureWorkspacePage() {
   };
 
   // Computed Checklist Metrics
-  const totalBasisPoints = consents
-    .filter((c) => c.status === 'PENDING' || c.status === 'VERIFIED')
-    .reduce((sum, c) => sum + Number(c.shareBasisPoints), 0);
+  const activeConsents = consents.filter((c) => c.status !== 'REVOKED' && c.status !== 'CANCELLED');
+  const totalBasisPoints = activeConsents.reduce((sum, c) => sum + Number(c.shareBasisPoints), 0);
 
   const isShares100Percent = totalBasisPoints === 10000;
-  const allConsentsVerified = consents.length > 0 && consents.every((c) => c.status === 'VERIFIED');
+  const allConsentsVerified = activeConsents.length > 0 && activeConsents.every((c) => c.status === 'VERIFIED');
   const activeAttachments = attachments.filter((a) => a.scanStatus !== 'ABANDONED');
   const hasSpecAttachment = activeAttachments.length > 0;
   const allAttachmentsClean = activeAttachments.length > 0 && activeAttachments.every((a) => a.scanStatus === 'CLEAN');
@@ -923,6 +1003,10 @@ export default function DisclosureWorkspacePage() {
                               <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-800">
                                 PENDING VERIFICATION
                               </span>
+                            ) : c.status === 'CANCELLED' ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700">
+                                CANCELLED
+                              </span>
                             ) : (
                               <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-800">
                                 REVOKED
@@ -930,8 +1014,35 @@ export default function DisclosureWorkspacePage() {
                             )}
                           </td>
                           {!isSubmitted && (
-                            <td className="px-6 py-4 text-right">
-                              {c.status !== 'REVOKED' && (
+                            <td className="px-6 py-4 text-right space-x-2">
+                              {/* Admin Verification Action */}
+                              {user?.activeRoles?.includes('Administrator') && c.status === 'PENDING' && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setVerifyingConsentId(c.id);
+                                    const cleanAtts = attachments.filter((a) => a.scanStatus === 'CLEAN');
+                                    if (cleanAtts.length > 0 && !selectedEvidenceAttachmentId) {
+                                      setSelectedEvidenceAttachmentId(cleanAtts[0].id);
+                                    }
+                                  }}
+                                  className="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline"
+                                >
+                                  Verify (Admin)
+                                </button>
+                              )}
+                              {/* Primary Inventor Cancel Pending Invitation */}
+                              {user?.id === disclosure?.primaryInventorId && c.status === 'PENDING' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleCancelConsent(c.id)}
+                                  className="text-xs font-semibold text-amber-600 hover:text-amber-800 hover:underline"
+                                >
+                                  Cancel
+                                </button>
+                              )}
+                              {/* Self Revoke for Inventor */}
+                              {user?.id === c.userId && (c.status === 'PENDING' || c.status === 'VERIFIED') && (
                                 <button
                                   type="button"
                                   onClick={() => handleRevokeConsent(c.id)}
@@ -946,6 +1057,91 @@ export default function DisclosureWorkspacePage() {
                       ))}
                     </tbody>
                   </table>
+                </div>
+              )}
+
+              {/* Admin Consent Verification Form */}
+              {verifyingConsentId && (
+                <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <h4 className="text-xs font-bold text-blue-900 uppercase tracking-wider mb-2">
+                    Institutional Consent Verification (Administrator)
+                  </h4>
+                  <p className="text-xs text-blue-700 mb-3">
+                    To complete institutional verification, select an uploaded attachment that has been verified CLEAN by the antivirus scanner to serve as signature evidence.
+                  </p>
+
+                  {verifyError && (
+                    <div className="mb-3 p-2 bg-red-100 border border-red-300 text-red-800 text-xs rounded">
+                      {verifyError}
+                    </div>
+                  )}
+                  {verifySuccess && (
+                    <div className="mb-3 p-2 bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs rounded">
+                      {verifySuccess}
+                    </div>
+                  )}
+
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 mb-1">
+                        Evidence Attachment (Must be CLEAN) *
+                      </label>
+                      {attachments.filter((a) => a.scanStatus === 'CLEAN').length === 0 ? (
+                        <div className="text-xs text-red-600 italic">
+                          No CLEAN attachments available on this disclosure. Upload and scan a signature document under the Supporting Documents tab first.
+                        </div>
+                      ) : (
+                        <select
+                          value={selectedEvidenceAttachmentId}
+                          onChange={(e) => setSelectedEvidenceAttachmentId(e.target.value)}
+                          className="w-full text-xs border border-slate-300 rounded px-3 py-2 bg-white"
+                        >
+                          <option value="">-- Select CLEAN Attachment --</option>
+                          {attachments
+                            .filter((a) => a.scanStatus === 'CLEAN')
+                            .map((a) => (
+                              <option key={a.id} value={a.id}>
+                                {a.fileName} (SHA-256: {a.sha256Hash.substring(0, 8)}...)
+                              </option>
+                            ))}
+                        </select>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 mb-1">
+                        Verification Notes
+                      </label>
+                      <input
+                        type="text"
+                        value={verificationNotes}
+                        onChange={(e) => setVerificationNotes(e.target.value)}
+                        className="w-full text-xs border border-slate-300 rounded px-3 py-2 bg-white"
+                        placeholder="e.g. Verified signed wet-ink physical consent form"
+                      />
+                    </div>
+
+                    <div className="flex space-x-2 pt-2">
+                      <button
+                        type="button"
+                        disabled={verifyingConsent || !selectedEvidenceAttachmentId}
+                        onClick={() => handleVerifyConsent(verifyingConsentId)}
+                        className="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {verifyingConsent ? 'Verifying...' : 'Confirm Verification'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVerifyingConsentId(null);
+                          setVerifyError('');
+                        }}
+                        className="px-3 py-1.5 bg-slate-200 text-slate-700 text-xs font-semibold rounded hover:bg-slate-300"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

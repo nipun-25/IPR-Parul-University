@@ -1,10 +1,13 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 const STUDENT_EMAIL_REGEX = /^[^@]+@paruluniversity\.ac\.in$/;
 
 export default function LoginPage() {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [status, setStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
@@ -74,6 +77,8 @@ export default function LoginPage() {
         if (data.csrfToken) {
           setActiveCsrfToken(data.csrfToken);
         }
+        // Redirect to Student Dashboard immediately upon successful login
+        router.push('/dashboard');
       } else if (res.status === 429) {
         setStatus('error');
         setErrorMessage(data.detail || 'Too many login attempts from this IP. Please try again after 15 minutes.');
@@ -120,7 +125,27 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-4">
+      {/* Top Portal Navigation */}
+      <nav className="w-full max-w-md flex justify-between items-center text-xs text-gray-500 mb-4 px-2" aria-label="Portal Navigation">
+        <Link href="/" className="hover:text-blue-600 transition flex items-center gap-1 font-medium">
+          &larr; IPR Home
+        </Link>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/dashboard"
+            className="text-blue-600 hover:text-blue-800 font-semibold transition"
+            data-testid="nav-dashboard-link"
+          >
+            Dashboard
+          </Link>
+          <span className="text-gray-300">|</span>
+          <Link href="/resend-verification" className="hover:text-blue-600 transition">
+            Resend Email
+          </Link>
+        </div>
+      </nav>
+
       <div className="max-w-md w-full bg-white shadow-md rounded-lg p-6">
         <h2 className="text-2xl font-bold text-gray-800 mb-2 text-center">IPR Portal Login</h2>
         <p className="text-sm text-gray-600 mb-6 text-center">
@@ -134,13 +159,22 @@ export default function LoginPage() {
               <p className="text-sm mt-1">Welcome back, {loggedInUser.fullName}!</p>
               <p className="text-xs text-gray-500 mt-1">Active Roles: {loggedInUser.activeRoles.join(', ')}</p>
             </div>
-            <button
-              onClick={handleLogout}
-              className="py-2 px-4 bg-gray-600 hover:bg-gray-700 text-white font-medium rounded-md shadow text-sm"
-              data-testid="logout-button"
-            >
-              Log Out
-            </button>
+            <div className="flex justify-center space-x-3">
+              <Link
+                href="/dashboard"
+                className="py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md shadow text-sm inline-block"
+                data-testid="dashboard-link"
+              >
+                Go to Dashboard
+              </Link>
+              <button
+                onClick={handleLogout}
+                className="py-2 px-4 bg-gray-600 hover:bg-gray-700 text-white font-medium rounded-md shadow text-sm"
+                data-testid="logout-button"
+              >
+                Log Out
+              </button>
+            </div>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4" data-testid="login-form">

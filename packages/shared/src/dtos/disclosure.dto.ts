@@ -201,6 +201,14 @@ export const CancelConsentInvitationSchema = z.object({
 
 export type CancelConsentInvitationDto = z.infer<typeof CancelConsentInvitationSchema>;
 
+export const VerifyConsentSchema = z.object({
+  consentId: z.string().uuid(),
+  evidenceAttachmentId: z.string().uuid(),
+  verificationNotes: z.string().min(1).max(2000).default('Institutional consent verified')
+}).strict();
+
+export type VerifyConsentDto = z.infer<typeof VerifyConsentSchema>;
+
 export interface DisclosureListItemDto {
   id: string;
   trackingNumber: string | null;

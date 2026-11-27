@@ -525,6 +525,71 @@ describe('Stage 2G.3 — Complete Student Portal End-to-End Workflow & Business 
       expect(res.body.code).toBe('BFF_SCOPE_AUTHORIZATION_DENIED');
     });
 
+    it('allows Administrator to verify inventor consent with clean evidence attachment (200)', async () => {
+      mockPool.query.mockResolvedValueOnce({ rows: [] });
+
+      const adminHeaders = makeBffHeaders({
+        method: 'POST',
+        path: '/api/v1/consent/verify',
+        scope: 'OP_VERIFY_CONSENT',
+        actorId: _adminActorId,
+        roles: ['Administrator'],
+        body: {
+          consentId: 'c1111111-2222-3333-4444-555555555555',
+          evidenceAttachmentId: attachmentId,
+          verificationNotes: 'Verified institutional physical signed form'
+        }
+      });
+
+      const res = await request(app)
+        .post('/api/v1/consent/verify')
+        .set(adminHeaders)
+        .send({
+          consentId: 'c1111111-2222-3333-4444-555555555555',
+          evidenceAttachmentId: attachmentId,
+          verificationNotes: 'Verified institutional physical signed form'
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.consentId).toBe('c1111111-2222-3333-4444-555555555555');
+      expect(mockPool.query).toHaveBeenCalledWith(
+        'SELECT public.verify_inventor_consent_v1($1::jsonb, $2::uuid, $3::text, $4::uuid)',
+        expect.arrayContaining([
+          expect.any(String),
+          'c1111111-2222-3333-4444-555555555555',
+          'Verified institutional physical signed form',
+          attachmentId
+        ])
+      );
+    });
+
+    it('allows Primary Inventor to cancel pending consent invitation (200)', async () => {
+      mockPool.query.mockResolvedValueOnce({ rows: [] });
+
+      const cancelHeaders = makeBffHeaders({
+        method: 'POST',
+        path: '/api/v1/consent/cancel',
+        scope: 'OP_CANCEL_CONSENT_INVITATION',
+        actorId: studentActorId,
+        roles: ['Student'],
+        body: {
+          consentId: 'c1111111-2222-3333-4444-555555555555'
+        }
+      });
+
+      const res = await request(app)
+        .post('/api/v1/consent/cancel')
+        .set(cancelHeaders)
+        .send({
+          consentId: 'c1111111-2222-3333-4444-555555555555'
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.consentId).toBe('c1111111-2222-3333-4444-555555555555');
+    });
+
     it('rejects submission when total shares do not equal 10,000 basis points (422)', async () => {
       mockPool.query.mockRejectedValueOnce(
         new Error('VALIDATION_FAILED: Total inventor share must equal exactly 10,000 basis points (100%), found 9000')
