@@ -155,7 +155,7 @@ describe('Stage 2F.3 — Frontend Login Component', () => {
     expect(successEl).not.toBeNull();
     expect(successEl?.textContent).toContain('Welcome back, Jane Doe!');
     expect(successEl?.textContent).toContain('Active Roles: Student');
-    expect(pushMock).toHaveBeenCalledWith('/dashboard');
+    expect(pushMock).toHaveBeenCalledWith('/student/dashboard');
   });
 
   it('displays generic invalid credentials on 401 error', async () => {

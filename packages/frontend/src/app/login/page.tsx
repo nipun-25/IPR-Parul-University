@@ -77,8 +77,8 @@ export default function LoginPage() {
         if (data.csrfToken) {
           setActiveCsrfToken(data.csrfToken);
         }
-        // Redirect to Student Dashboard immediately upon successful login
-        router.push('/dashboard');
+        // Redirect to Canonical Student Dashboard immediately upon successful login
+        router.push('/student/dashboard');
       } else if (res.status === 429) {
         setStatus('error');
         setErrorMessage(data.detail || 'Too many login attempts from this IP. Please try again after 15 minutes.');
@@ -133,7 +133,7 @@ export default function LoginPage() {
         </Link>
         <div className="flex items-center gap-3">
           <Link
-            href="/dashboard"
+            href="/student/dashboard"
             className="text-blue-600 hover:text-blue-800 font-semibold transition"
             data-testid="nav-dashboard-link"
           >
@@ -161,7 +161,7 @@ export default function LoginPage() {
             </div>
             <div className="flex justify-center space-x-3">
               <Link
-                href="/dashboard"
+                href="/student/dashboard"
                 className="py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md shadow text-sm inline-block"
                 data-testid="dashboard-link"
               >

@@ -71,8 +71,5 @@ export function StatusBadge({ status, size = 'md', className = '' }: StatusBadge
 }
 
 function formatStatusLabel(status: string): string {
-  return status
-    .split('_')
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-    .join(' ');
+  return status.toUpperCase().replace(/_/g, ' ');
 }

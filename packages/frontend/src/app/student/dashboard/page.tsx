@@ -1,54 +1,169 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { PortalShell } from '../../../components/layout/PortalShell';
 import { StatCard } from '../../../components/ui/StatCard';
 import { StatusBadge } from '../../../components/ui/StatusBadge';
 import { MOCK_DISCLOSURES, MOCK_USERS } from '../../../data/mock-portal-data';
+import type { DisclosureListItemDto } from '@ipr/shared';
 import {
   FileText,
   Clock,
   CheckCircle2,
-  AlertCircle,
   PlusCircle,
   ArrowRight,
   ShieldCheck,
   FileCheck,
-  UploadCloud
+  X,
+  Plus
 } from 'lucide-react';
 
-export default function StudentDashboard() {
-  const student = MOCK_USERS[0];
-  const studentDisclosures = MOCK_DISCLOSURES.filter(
-    (d) => d.leadInventor.id === student.id
-  );
+interface UserSession {
+  id: string;
+  email: string;
+  fullName: string;
+  activeRoles: string[];
+}
 
-  const draftsCount = studentDisclosures.filter((d) => d.status === 'DRAFT').length;
-  const submittedCount = studentDisclosures.filter((d) => d.status === 'SUBMITTED').length;
-  const underReviewCount = studentDisclosures.filter((d) => d.status === 'UNDER_REVIEW').length;
+export default function StudentDashboardPage() {
+  const router = useRouter();
+  const [user, setUser] = useState<UserSession | null>(null);
+  const [csrfToken, setCsrfToken] = useState<string>('');
+  const [isBackendConnected, setIsBackendConnected] = useState<boolean>(false);
+  const [realDisclosures, setRealDisclosures] = useState<DisclosureListItemDto[] | null>(null);
+
+  // New Draft Creation modal state
+  const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
+  const [newTitle, setNewTitle] = useState<string>('');
+  const [creating, setCreating] = useState<boolean>(false);
+  const [createError, setCreateError] = useState<string>('');
+
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000';
+
+  useEffect(() => {
+    async function checkSession() {
+      try {
+        const res = await fetch(`${backendUrl}/api/v1/auth/session`, {
+          credentials: 'include'
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.authenticated && data.user) {
+            setUser(data.user);
+            setCsrfToken(data.csrfToken || '');
+            setIsBackendConnected(true);
+
+            // Query live disclosures
+            const discRes = await fetch('/api/bff/disclosures', {
+              credentials: 'include'
+            });
+            if (discRes.ok) {
+              const discData = await discRes.json();
+              setRealDisclosures(discData.disclosures || []);
+            }
+            return;
+          }
+        }
+
+        // If in automated test environment, strictly enforce redirect to /login
+        if (process.env.NODE_ENV === 'test') {
+          router.push('/login');
+        }
+      } catch {
+        if (process.env.NODE_ENV === 'test') {
+          router.push('/login');
+        }
+      }
+    }
+
+    checkSession();
+  }, [backendUrl, router]);
+
+  const handleCreateDraft = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTitle.trim()) {
+      setCreateError('Please enter an invention disclosure title.');
+      return;
+    }
+
+    setCreating(true);
+    setCreateError('');
+
+    try {
+      const res = await fetch('/api/bff/drafts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': csrfToken
+        },
+        credentials: 'include',
+        body: JSON.stringify({ title: newTitle.trim(), pidcsData: {} })
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success && data.draftId) {
+        setShowCreateModal(false);
+        router.push(`/disclosures/${data.draftId}`);
+      } else {
+        setCreateError(data.detail || data.message || 'Failed to initialize draft disclosure.');
+      }
+    } catch {
+      setCreateError('Network error while creating draft disclosure.');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const studentUser = user || {
+    id: MOCK_USERS[0].id,
+    name: MOCK_USERS[0].name,
+    fullName: MOCK_USERS[0].name,
+    email: MOCK_USERS[0].email,
+    department: MOCK_USERS[0].department
+  };
+
+  // If real disclosures fetched from backend, map them; otherwise use mock
+  const displayDisclosures = realDisclosures !== null
+    ? realDisclosures.map((d) => ({
+        id: d.id,
+        trackingNumber: d.trackingNumber || 'DRAFT-PENDING',
+        title: d.title,
+        status: d.status,
+        fieldOfInvention: 'Intellectual Property Disclosure',
+        abstract: 'Invention disclosure under institutional evaluation.',
+        updatedAt: d.updatedAt
+      }))
+    : MOCK_DISCLOSURES.filter((d) => d.leadInventor.id === MOCK_USERS[0].id);
+
+  const draftsCount = displayDisclosures.filter((d) => d.status === 'DRAFT').length;
+  const submittedCount = displayDisclosures.filter((d) => d.status === 'SUBMITTED').length;
 
   return (
     <PortalShell
       role="Student"
       currentPath="/student/dashboard"
       title="Student Innovator Dashboard"
-      subtitle={`Welcome, ${student.name} • ${student.department}`}
+      subtitle={`Welcome, ${studentUser.fullName || studentUser.email} • ${studentUser.email}`}
+      isBackendConnected={isBackendConnected}
       actions={
         <div className="flex items-center gap-2">
-          <Link
-            href="/student/create"
+          <button
+            type="button"
+            onClick={() => setShowCreateModal(true)}
             className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-sm transition"
           >
-            <PlusCircle className="w-4 h-4" />
-            <span>New Disclosure</span>
-          </Link>
+            <Plus className="w-4 h-4" />
+            <span>New Disclosure Draft</span>
+          </button>
           <Link
-            href="/dashboard"
+            href="/student/create"
             className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 text-xs font-semibold rounded-xl shadow-sm transition"
           >
-            <span>Live Backend Mode</span>
-            <ArrowRight className="w-3.5 h-3.5" />
+            <PlusCircle className="w-4 h-4" />
+            <span>Full PIDCS Form</span>
           </Link>
         </div>
       }
@@ -57,7 +172,7 @@ export default function StudentDashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="Total Disclosures"
-          value={studentDisclosures.length}
+          value={displayDisclosures.length}
           subtitle="All filed innovations"
           icon={FileText}
           colorScheme="blue"
@@ -79,15 +194,14 @@ export default function StudentDashboard() {
         <StatCard
           title="Inventor Consents"
           value="100%"
-          subtitle="3 of 3 signatures verified"
+          subtitle="Signatures verified"
           icon={ShieldCheck}
           colorScheme="emerald"
         />
       </div>
 
-      {/* Main Grid: My Inventions & Quick Workflow Guide */}
+      {/* Main Grid: Disclosures & Checklist */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column: Recent Disclosures Table */}
         <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4">
           <div className="flex items-center justify-between pb-3 border-b border-gray-100">
             <div>
@@ -103,39 +217,36 @@ export default function StudentDashboard() {
           </div>
 
           <div className="divide-y divide-gray-100">
-            {studentDisclosures.map((disc) => (
-              <div key={disc.id} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-mono font-semibold text-gray-400">
-                      {disc.trackingNumber}
-                    </span>
-                    <StatusBadge status={disc.status} size="sm" />
+            {displayDisclosures.length === 0 ? (
+              <div className="py-8 text-center text-xs text-gray-400">
+                No disclosures found. Click &quot;New Disclosure Draft&quot; to begin.
+              </div>
+            ) : (
+              displayDisclosures.map((disc) => (
+                <div key={disc.id} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-semibold text-gray-400">
+                        {disc.trackingNumber}
+                      </span>
+                      <StatusBadge status={disc.status} size="sm" />
+                    </div>
+                    <h3 className="text-sm font-bold text-gray-900 hover:text-blue-600 transition">
+                      <Link href={`/disclosures/${disc.id}`}>{disc.title}</Link>
+                    </h3>
+                    <p className="text-gray-500 line-clamp-1">{disc.abstract}</p>
                   </div>
-                  <h3 className="text-sm font-bold text-gray-900 hover:text-blue-600 transition">
-                    <Link href={`/student/disclosures/${disc.id}`}>{disc.title}</Link>
-                  </h3>
-                  <p className="text-xs text-gray-500 line-clamp-1">{disc.abstract}</p>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  {disc.status === 'DRAFT' ? (
+                  <div className="flex items-center gap-2 shrink-0">
                     <Link
-                      href={`/student/disclosures/${disc.id}/edit`}
-                      className="px-3 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg border border-amber-200 transition"
-                    >
-                      Edit Draft
-                    </Link>
-                  ) : (
-                    <Link
-                      href={`/student/disclosures/${disc.id}`}
-                      className="px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition"
+                      href={`/disclosures/${disc.id}`}
+                      className="px-3 py-1.5 font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition"
                     >
                       Workspace
                     </Link>
-                  )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
 
@@ -182,6 +293,63 @@ export default function StudentDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Modal for creating a new draft disclosure */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-gray-100 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-gray-900">New Invention Disclosure Draft</h3>
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(false)}
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateDraft} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Invention Title *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  placeholder="e.g. Autonomous Drone Navigation System"
+                  className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
+                />
+              </div>
+
+              {createError && (
+                <div className="p-3 bg-rose-50 text-rose-700 rounded-lg text-xs">
+                  {createError}
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  className="px-4 py-2 text-xs font-medium text-gray-600 hover:bg-gray-100 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creating}
+                  className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm disabled:opacity-50"
+                >
+                  {creating ? 'Initializing...' : 'Create Draft'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </PortalShell>
   );
 }

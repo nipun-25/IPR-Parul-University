@@ -1,14 +1,90 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { PortalShell } from '../../../components/layout/PortalShell';
 import { DataTable } from '../../../components/ui/DataTable';
 import { StatusBadge } from '../../../components/ui/StatusBadge';
-import { MOCK_DISCLOSURES, type MockDisclosure } from '../../../data/mock-portal-data';
-import { PlusCircle, Eye, Users, Paperclip } from 'lucide-react';
+import { MOCK_DISCLOSURES, MOCK_USERS, type MockDisclosure } from '../../../data/mock-portal-data';
+import { PlusCircle, Eye, Users } from 'lucide-react';
+
+interface DisclosureListItemDto {
+  id: string;
+  trackingNumber: string | null;
+  title: string;
+  status: string;
+  primaryInventorId: string;
+  assignedReviewerId: string | null;
+  reviewStatus: string;
+  legalClearanceStatus: string;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export default function FacultyDisclosuresPage() {
+  const [isBackendConnected, setIsBackendConnected] = useState<boolean>(false);
+  const [realDisclosures, setRealDisclosures] = useState<DisclosureListItemDto[] | null>(null);
+
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000';
+
+  useEffect(() => {
+    async function checkSession() {
+      try {
+        const res = await fetch(`${backendUrl}/api/v1/auth/session`, {
+          credentials: 'include'
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.authenticated && data.user) {
+            setIsBackendConnected(true);
+            const discRes = await fetch('/api/bff/disclosures', {
+              credentials: 'include'
+            });
+            if (discRes.ok) {
+              const discData = await discRes.json();
+              setRealDisclosures(discData.disclosures || []);
+            }
+          }
+        }
+      } catch {
+        // Fallback to preview data
+      }
+    }
+
+    checkSession();
+  }, [backendUrl]);
+
+  const displayData: MockDisclosure[] = realDisclosures !== null
+    ? realDisclosures.map((d) => ({
+        id: d.id,
+        trackingNumber: d.trackingNumber || 'DRAFT-PENDING',
+        title: d.title,
+        status: d.status as any,
+        fieldOfInvention: 'Renewable Energy & Materials Science',
+        createdAt: d.createdAt,
+        updatedAt: d.updatedAt,
+        leadInventor: { ...MOCK_USERS[1], name: 'Faculty Lead' },
+        department: 'Department of Renewable Energy, PIT',
+        commercialPotential: '',
+        priorArtDetails: '',
+        clarifications: [],
+        inventors: [{
+          id: d.primaryInventorId,
+          name: 'Faculty Inventor',
+          email: 'faculty@paruluniversity.ac.in',
+          affiliation: 'Parul University (Internal)',
+          role: 'Primary Inventor',
+          consentStatus: 'VERIFIED' as const
+        }],
+        abstract: '',
+        detailedDescription: '',
+        attachments: [],
+        reviewStatus: d.reviewStatus,
+        legalClearanceStatus: d.legalClearanceStatus
+      }))
+    : MOCK_DISCLOSURES;
+
   const columns = [
     {
       key: 'trackingNumber',
@@ -69,6 +145,7 @@ export default function FacultyDisclosuresPage() {
       currentPath="/faculty/disclosures"
       title="My Research Disclosures"
       subtitle="Complete ledger of faculty-led scientific inventions, laboratory patents, and technology transfers"
+      isBackendConnected={isBackendConnected}
       actions={
         <Link
           href="/faculty/create"
@@ -81,7 +158,7 @@ export default function FacultyDisclosuresPage() {
     >
       <DataTable
         columns={columns}
-        data={MOCK_DISCLOSURES}
+        data={displayData}
         rowKey={(d) => d.id}
         searchPlaceholder="Search research disclosures..."
         searchFilter={(disc, q) =>
