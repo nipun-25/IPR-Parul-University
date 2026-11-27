@@ -4,7 +4,7 @@ import React from 'react';
 import { PortalShell } from '../../../components/layout/PortalShell';
 import { StatusBadge } from '../../../components/ui/StatusBadge';
 import { MOCK_DISCLOSURES } from '../../../data/mock-portal-data';
-import { Award, CheckCircle2, Star } from 'lucide-react';
+import { Award, CheckCircle2, Star, AlertCircle } from 'lucide-react';
 
 export default function ReviewerEvaluationPage() {
   const evaluations = MOCK_DISCLOSURES.filter((d) => d.evaluation).map((d) => ({
@@ -21,6 +21,19 @@ export default function ReviewerEvaluationPage() {
       subtitle="Complete scoring rubrics covering novelty, inventive step and commercial viability"
     >
       <div className="space-y-6">
+        {/* Pending Migration Banner */}
+        <div className="flex items-center justify-between p-3.5 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-800">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>
+              <strong>Gateway Status (Pending Migration):</strong> The formal reviewer evaluation ledger gateway (<code>public.record_reviewer_evaluation_v1</code>) is pending database migration approval. Showing demonstration evaluation records.
+            </span>
+          </div>
+          <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded font-mono text-[10px] font-bold">
+            PREVIEW / PENDING GATEWAY
+          </span>
+        </div>
+
         {evaluations.map((ev) => (
           <div key={ev.id} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4 text-xs">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-gray-100 gap-2">

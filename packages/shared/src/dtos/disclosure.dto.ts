@@ -215,6 +215,13 @@ export const AssignReviewerSchema = z.object({
 
 export type AssignReviewerDto = z.infer<typeof AssignReviewerSchema>;
 
+export const RecordLegalClearanceSchema = z.object({
+  clearanceStatus: z.enum(['CLEARED', 'REJECTED']),
+  clearanceNotes: z.string().min(1).max(4000)
+}).strict();
+
+export type RecordLegalClearanceDto = z.infer<typeof RecordLegalClearanceSchema>;
+
 export interface AssignReviewerResponseDto {
   success: boolean;
   message: string;

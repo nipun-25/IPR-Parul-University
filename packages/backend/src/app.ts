@@ -30,6 +30,12 @@ import {
   uploadAttachmentContentHandler,
   abandonAttachmentHandler
 } from './controllers/attachment-upload.controller.js';
+import {
+  recordLegalClearanceHandler,
+  createPatentApplicationHandler,
+  recordPatentStageTransitionHandler,
+  getPatentApplicationHandler
+} from './controllers/legal.controller.js';
 import { AntivirusScannerService } from './services/scanner.service.js';
 import { createAuthRouter } from './routes/auth.routes.js';
 import { EmailService } from './services/email.service.js';
@@ -241,6 +247,12 @@ export function createApp(env: BackendEnv, options?: CreateAppOptions): Express 
 
   // Reviewer Assignment (Administrator - Gate P2 Stage 2G.4)
   protectedApiRouter.post('/disclosures/:id/assign-reviewer', assignDisclosureReviewerHandler(options?.dbPool));
+
+  // Legal Clearance & Patent Applications (Legal Officer & Administrator - Gate P2 Step 4)
+  protectedApiRouter.post('/disclosures/:id/legal-clearance', recordLegalClearanceHandler(options?.dbPool));
+  protectedApiRouter.post('/patents', createPatentApplicationHandler(options?.dbPool));
+  protectedApiRouter.post('/patents/:id/stage-transition', recordPatentStageTransitionHandler(options?.dbPool));
+  protectedApiRouter.get('/patents/:id', getPatentApplicationHandler(options?.dbPool));
 
   // Public Authentication Endpoints (Registration & Email Verification - Gate P2 Stage 2F)
   let csrfSecret: string;

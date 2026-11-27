@@ -153,6 +153,12 @@ const BFF_ROUTE_WHITELIST: readonly RouteWhitelistRule[] = [
     method: 'POST',
     scope: 'OP_TRANSITION_PATENT_STAGE',
     mapToBackendPath: (m) => `/api/v1/patents/${m[1]}/stage-transition`
+  },
+  {
+    regex: /^\/patents\/([a-zA-Z0-9-]+)$/,
+    method: 'GET',
+    scope: 'OP_VIEW_DISCLOSURE',
+    mapToBackendPath: (m) => `/api/v1/patents/${m[1]}`
   }
 ];
 
