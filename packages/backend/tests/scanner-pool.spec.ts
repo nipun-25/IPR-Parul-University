@@ -98,9 +98,17 @@ describe('Dedicated Scanner Database Pool & Security Isolation', () => {
 
       const mockAppPool = {
         query: vi.fn().mockImplementation((sql: string) => {
-          if (sql.includes('attachments a')) {
+          if (sql.includes('get_attachment_upload_context_v1') || sql.includes('attachments a')) {
             return Promise.resolve({
               rows: [{
+                out_attachment_id: attachmentId,
+                out_disclosure_id: disclosureId,
+                out_file_name: 'test.pdf',
+                out_file_size_bytes: String(fileBuffer.length),
+                out_mime_type: 'application/pdf',
+                out_sha256_hash: expectedHash,
+                out_storage_path: 'disclosures/test.pdf',
+                out_token_id: 'tok-123',
                 attachmentId,
                 disclosureId,
                 fileName: 'test.pdf',
@@ -156,9 +164,17 @@ describe('Dedicated Scanner Database Pool & Security Isolation', () => {
 
       const mockAppPool = {
         query: vi.fn().mockImplementation((sql: string) => {
-          if (sql.includes('attachments a')) {
+          if (sql.includes('get_attachment_upload_context_v1') || sql.includes('attachments a')) {
             return Promise.resolve({
               rows: [{
+                out_attachment_id: attachmentId,
+                out_disclosure_id: disclosureId,
+                out_file_name: 'clean.pdf',
+                out_file_size_bytes: String(fileBuffer.length),
+                out_mime_type: 'application/pdf',
+                out_sha256_hash: expectedHash,
+                out_storage_path: 'disclosures/clean.pdf',
+                out_token_id: 'tok-123',
                 attachmentId,
                 disclosureId,
                 fileName: 'clean.pdf',

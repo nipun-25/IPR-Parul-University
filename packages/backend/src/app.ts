@@ -21,9 +21,13 @@ import {
   getDisclosureAttachmentsHandler,
   createAttachmentHandler,
   createConsentRequestHandler,
-  revokeConsentHandler
+  revokeConsentHandler,
+  cancelConsentInvitationHandler
 } from './controllers/disclosure.controller.js';
-import { uploadAttachmentContentHandler } from './controllers/attachment-upload.controller.js';
+import {
+  uploadAttachmentContentHandler,
+  abandonAttachmentHandler
+} from './controllers/attachment-upload.controller.js';
 import { AntivirusScannerService } from './services/scanner.service.js';
 import { createAuthRouter } from './routes/auth.routes.js';
 import { EmailService } from './services/email.service.js';
@@ -222,10 +226,15 @@ export function createApp(env: BackendEnv, options?: CreateAppOptions): Express 
     '/attachments/:id/upload',
     uploadAttachmentContentHandler(options?.dbPool, quarantineStorage, scannerService)
   );
+  protectedApiRouter.post(
+    '/attachments/:id/abandon',
+    abandonAttachmentHandler(options?.dbPool, quarantineStorage)
+  );
 
   // Consent Requests Mutation
   protectedApiRouter.post('/consent/request', createConsentRequestHandler(options?.dbPool));
   protectedApiRouter.post('/consent/revoke', revokeConsentHandler(options?.dbPool));
+  protectedApiRouter.post('/consent/cancel', cancelConsentInvitationHandler(options?.dbPool));
 
   // Public Authentication Endpoints (Registration & Email Verification - Gate P2 Stage 2F)
   let csrfSecret: string;

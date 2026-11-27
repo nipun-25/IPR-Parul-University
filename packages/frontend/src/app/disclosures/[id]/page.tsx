@@ -362,6 +362,44 @@ export default function DisclosureWorkspacePage() {
     }
   };
 
+  // Handle Abandon Attachment (Stage 2G.7)
+  const [abandoningAttachmentId, setAbandoningAttachmentId] = useState<string | null>(null);
+
+  const handleAbandonAttachment = async (attachmentId: string) => {
+    if (disclosure?.status !== 'DRAFT') return;
+    if (!confirm('Are you sure you want to abandon this attachment upload? Abandoned attachments cannot be submitted, but you can register and upload a fresh copy.')) {
+      return;
+    }
+
+    setAbandoningAttachmentId(attachmentId);
+    setUploadError('');
+    setUploadSuccess('');
+
+    try {
+      const res = await fetch(`/api/bff/attachments/${attachmentId}/abandon`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': csrfToken
+        },
+        credentials: 'include',
+        body: JSON.stringify({})
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || data.message || 'Failed to abandon attachment.');
+      }
+
+      setUploadSuccess('Attachment successfully abandoned. You may now upload a fresh copy.');
+      await fetchWorkspaceData();
+    } catch (err: unknown) {
+      setUploadError(err instanceof Error ? err.message : 'Error abandoning attachment.');
+    } finally {
+      setAbandoningAttachmentId(null);
+    }
+  };
+
   // Handle Final Submission
   const handleSubmitDisclosure = async () => {
     if (disclosure?.status !== 'DRAFT') return;
@@ -404,8 +442,9 @@ export default function DisclosureWorkspacePage() {
 
   const isShares100Percent = totalBasisPoints === 10000;
   const allConsentsVerified = consents.length > 0 && consents.every((c) => c.status === 'VERIFIED');
-  const hasSpecAttachment = attachments.length > 0;
-  const allAttachmentsClean = attachments.length > 0 && attachments.every((a) => a.scanStatus === 'CLEAN');
+  const activeAttachments = attachments.filter((a) => a.scanStatus !== 'ABANDONED');
+  const hasSpecAttachment = activeAttachments.length > 0;
+  const allAttachmentsClean = activeAttachments.length > 0 && activeAttachments.every((a) => a.scanStatus === 'CLEAN');
 
   const canSubmit =
     disclosure?.status === 'DRAFT' &&
@@ -1070,6 +1109,7 @@ export default function DisclosureWorkspacePage() {
                         <th className="px-6 py-3">MIME Type</th>
                         <th className="px-6 py-3">SHA-256 Checksum</th>
                         <th className="px-6 py-3">Antivirus Scan Status</th>
+                        {!isSubmitted && <th className="px-6 py-3 text-right">Actions</th>}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
@@ -1106,16 +1146,44 @@ export default function DisclosureWorkspacePage() {
                               <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-orange-100 text-orange-800">
                                 SCAN FAILED
                               </span>
+                            ) : att.scanStatus === 'ABANDONED' ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-300">
+                                ABANDONED
+                              </span>
                             ) : (
                               <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-800">
                                 INFECTED
                               </span>
                             )}
                           </td>
+                          {!isSubmitted && (
+                            <td className="px-6 py-4 text-right">
+                              {att.scanStatus === 'ABANDONED' ? (
+                                <span className="text-xs text-slate-400 italic">Abandoned</span>
+                              ) : att.scanStatus === 'CLEAN' ? (
+                                <span className="text-xs text-emerald-600 font-medium">Verified Clean</span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={abandoningAttachmentId === att.id}
+                                  onClick={() => handleAbandonAttachment(att.id)}
+                                  className="text-xs font-semibold text-red-600 hover:text-red-800 hover:underline disabled:opacity-50"
+                                >
+                                  {abandoningAttachmentId === att.id ? 'Abandoning...' : 'Abandon Upload'}
+                                </button>
+                              )}
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
                   </table>
+                </div>
+              )}
+              {attachments.some((a) => a.scanStatus === 'ABANDONED') && (
+                <div className="p-3.5 bg-slate-50 border-t border-slate-200 text-xs text-slate-600 flex items-center justify-between">
+                  <span>Abandoned attachments are preserved for audit history and do not satisfy specification requirements.</span>
+                  <span className="font-semibold text-indigo-700">You may upload a fresh copy below.</span>
                 </div>
               )}
             </div>
@@ -1295,7 +1363,7 @@ export default function DisclosureWorkspacePage() {
                           At Least One Specification Document Uploaded
                         </div>
                         <div className="text-xs text-slate-500">
-                          Uploaded attachments: {attachments.length}
+                          Uploaded specification attachments: {activeAttachments.length}
                         </div>
                       </div>
                     </div>

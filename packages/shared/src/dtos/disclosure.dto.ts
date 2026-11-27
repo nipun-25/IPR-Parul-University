@@ -148,6 +148,12 @@ export interface SubmitDisclosureResponseDto {
   submittedAt?: string;
 }
 
+export const AbandonAttachmentSchema = z.object({
+  attachmentId: z.string().uuid()
+}).strict();
+
+export type AbandonAttachmentDto = z.infer<typeof AbandonAttachmentSchema>;
+
 export interface SubmissionResultDto {
   trackingNumber: string;
   submittedAt?: string;
@@ -188,6 +194,12 @@ export const RevokeConsentSchema = z.object({
 }).strict();
 
 export type RevokeConsentDto = z.infer<typeof RevokeConsentSchema>;
+
+export const CancelConsentInvitationSchema = z.object({
+  consentId: z.string().uuid()
+}).strict();
+
+export type CancelConsentInvitationDto = z.infer<typeof CancelConsentInvitationSchema>;
 
 export interface DisclosureListItemDto {
   id: string;

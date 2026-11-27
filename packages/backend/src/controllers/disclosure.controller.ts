@@ -4,6 +4,7 @@ import {
   CreateAttachmentSchema,
   CreateConsentRequestSchema,
   RevokeConsentSchema,
+  CancelConsentInvitationSchema,
   DisclosureListItemDto,
   InventorConsentItemDto,
   AttachmentItemDto
@@ -423,8 +424,6 @@ export function createAttachmentHandler(dbPool?: Pool) {
       res.status(201).json({
         success: true,
         attachmentId: row.out_attachment_id,
-        tokenId: row.out_token_id,
-        tokenExpiresAt: row.out_token_expires_at,
         message: 'Attachment metadata registered successfully in PENDING_SCAN state'
       });
     } catch (err: unknown) {
@@ -644,6 +643,91 @@ export function revokeConsentHandler(dbPool?: Pool) {
           code: 'INVALID_WORKFLOW_STATE',
           title: 'Invalid State',
           detail: 'Only PENDING or VERIFIED consents may be revoked.'
+        }));
+      }
+
+      if (errMsg.includes('NOT_FOUND') || errRecord.code === 'P0002') {
+        return next(new AppError({
+          statusCode: 404,
+          code: 'RESOURCE_NOT_FOUND',
+          title: 'Resource Not Found',
+          detail: 'Consent record does not exist.'
+        }));
+      }
+
+      if (isDatabaseUnavailable(err)) {
+        return next(new AppError({
+          statusCode: 503,
+          code: 'DATABASE_UNAVAILABLE',
+          title: 'Database Unavailable',
+          detail: 'Database connection failed or service is temporarily unavailable.'
+        }));
+      }
+
+      next(err);
+    }
+  };
+}
+
+export function cancelConsentInvitationHandler(dbPool?: Pool) {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      if (!dbPool) {
+        throw new AppError({
+          statusCode: 503,
+          code: 'DATABASE_UNAVAILABLE',
+          title: 'Database Unavailable',
+          detail: 'Database connection pool is not configured.'
+        });
+      }
+
+      if (!req.assertion) {
+        throw new AppError({
+          statusCode: 401,
+          code: 'BFF_ASSERTION_MISSING',
+          title: 'Missing Request Assertion',
+          detail: 'Verified request assertion is required to cancel consent invitation.'
+        });
+      }
+
+      const parseResult = CancelConsentInvitationSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        throw parseResult.error;
+      }
+
+      const { consentId } = parseResult.data;
+
+      await dbPool.query(
+        'SELECT public.cancel_consent_invitation_v1($1::jsonb, $2::uuid)',
+        [JSON.stringify(req.assertion), consentId]
+      );
+
+      res.status(200).json({
+        success: true,
+        consentId,
+        message: 'Inventor consent invitation cancelled successfully'
+      });
+    } catch (err: unknown) {
+      const errRecord = (typeof err === 'object' && err !== null) ? (err as Record<string, unknown>) : {};
+      const errMsg = typeof errRecord.message === 'string' ? errRecord.message : '';
+
+      if (errMsg.includes('FORBIDDEN') || errRecord.code === '42501' || errMsg.includes('insufficient_privilege')) {
+        return next(new AppError({
+          statusCode: 403,
+          code: 'CONSENT_CANCELLATION_FORBIDDEN',
+          title: 'Forbidden Invitation Cancellation',
+          detail: 'Only the primary inventor may cancel pending consent invitations.'
+        }));
+      }
+
+      if (errMsg.includes('INVALID_STATE')) {
+        return next(new AppError({
+          statusCode: 422,
+          code: 'INVALID_WORKFLOW_STATE',
+          title: 'Invalid State',
+          detail: errMsg.includes('Verified consent cannot be cancelled')
+            ? 'Verified consent cannot be cancelled.'
+            : 'Only PENDING consent invitations may be cancelled.'
         }));
       }
 

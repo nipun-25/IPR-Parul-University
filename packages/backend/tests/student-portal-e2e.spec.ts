@@ -332,26 +332,20 @@ describe('Stage 2G.3 — Complete Student Portal End-to-End Workflow & Business 
       expect(registerAttRes.body.attachmentId).toBe(attachmentId);
 
       // Step G: Stage 2 — Stream Raw Bytes to Quarantine Upload Endpoint
-      mockPool.query
-        .mockResolvedValueOnce({
-          rows: [
-            {
-              attachmentId,
-              disclosureId,
-              fileName: 'pollination-spec.pdf',
-              fileSizeBytes: String(specContent.length),
-              mimeType: 'application/pdf',
-              sha256Hash: specHash,
-              storagePath: `disclosures/${disclosureId}/pollination-spec.pdf`,
-              scanStatus: 'PENDING_SCAN',
-              disclosureStatus: 'DRAFT',
-              primaryInventorId: studentActorId
-            }
-          ]
-        })
-        .mockResolvedValueOnce({
-          rows: [{ token_id: scanTokenId }]
-        });
+      mockPool.query.mockResolvedValueOnce({
+        rows: [
+          {
+            out_attachment_id: attachmentId,
+            out_disclosure_id: disclosureId,
+            out_file_name: 'pollination-spec.pdf',
+            out_file_size_bytes: String(specContent.length),
+            out_mime_type: 'application/pdf',
+            out_sha256_hash: specHash,
+            out_storage_path: `disclosures/${disclosureId}/pollination-spec.pdf`,
+            out_token_id: scanTokenId
+          }
+        ]
+      });
 
       mockScannerPool.query.mockResolvedValueOnce({ rows: [] });
 

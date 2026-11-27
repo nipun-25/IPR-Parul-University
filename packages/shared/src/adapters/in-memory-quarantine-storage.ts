@@ -178,4 +178,8 @@ export class InMemoryQuarantineStorage implements IQuarantineStorageAdapter {
     this.quarantineBucket.clear();
     this.approvedBucket.clear();
   }
+
+  public async deleteQuarantineObject(objectId: string): Promise<void> {
+    this.quarantineBucket.delete(objectId);
+  }
 }

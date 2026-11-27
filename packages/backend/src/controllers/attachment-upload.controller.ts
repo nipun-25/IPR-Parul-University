@@ -73,8 +73,9 @@ export function uploadAttachmentContentHandler(
         });
       }
 
-      // Query registered attachment and disclosure ownership state
-      const dbResult = await dbPool.query<{
+      // Retrieve registered attachment metadata, disclosure state, and active scan token
+      // via authorized SECURITY DEFINER gateway function (enforcing privilege separation)
+      let record: {
         attachmentId: string;
         disclosureId: string;
         fileName: string;
@@ -82,66 +83,109 @@ export function uploadAttachmentContentHandler(
         mimeType: string;
         sha256Hash: string;
         storagePath: string;
-        scanStatus: string;
-        disclosureStatus: string;
-        primaryInventorId: string;
-      }>(
-        `SELECT
-          a.id AS "attachmentId",
-          a.disclosure_id AS "disclosureId",
-          a.file_name AS "fileName",
-          a.file_size_bytes AS "fileSizeBytes",
-          a.mime_type AS "mimeType",
-          a.sha256_hash AS "sha256Hash",
-          a.storage_path AS "storagePath",
-          a.scan_status AS "scanStatus",
-          d.status AS "disclosureStatus",
-          d.primary_inventor_id AS "primaryInventorId"
-        FROM public.attachments a
-        JOIN public.disclosures d ON d.id = a.disclosure_id
-        WHERE a.id = $1`,
-        [attachmentId]
-      );
+        tokenId: string;
+      };
 
-      const record = dbResult.rows[0];
-      if (!record) {
-        throw new AppError({
-          statusCode: 404,
-          code: 'RESOURCE_NOT_FOUND',
-          title: 'Resource Not Found',
-          detail: `Attachment "${attachmentId}" does not exist.`
-        });
-      }
+      try {
+        const dbResult = await dbPool.query<{
+          out_attachment_id: string;
+          out_disclosure_id: string;
+          out_file_name: string;
+          out_file_size_bytes: string;
+          out_mime_type: string;
+          out_sha256_hash: string;
+          out_storage_path: string;
+          out_token_id: string;
+        }>(
+          `SELECT
+            out_attachment_id,
+            out_disclosure_id,
+            out_file_name,
+            out_file_size_bytes,
+            out_mime_type,
+            out_sha256_hash,
+            out_storage_path,
+            out_token_id
+          FROM public.get_attachment_upload_context_v1($1::jsonb, $2::uuid)`,
+          [JSON.stringify(req.assertion), attachmentId]
+        );
 
-      // Verify Actor is Primary Inventor
-      const actorId = req.actor?.actorId || req.assertion.actor_id;
-      if (record.primaryInventorId !== actorId) {
-        throw new AppError({
-          statusCode: 403,
-          code: 'ATTACHMENT_FORBIDDEN',
-          title: 'Forbidden Access',
-          detail: 'Only the primary inventor may upload file content to this disclosure.'
-        });
-      }
+        const row = dbResult.rows[0];
+        if (!row) {
+          throw new AppError({
+            statusCode: 404,
+            code: 'RESOURCE_NOT_FOUND',
+            title: 'Resource Not Found',
+            detail: `Attachment "${attachmentId}" does not exist.`
+          });
+        }
 
-      // Verify DRAFT status
-      if (record.disclosureStatus !== 'DRAFT') {
-        throw new AppError({
-          statusCode: 422,
-          code: 'INVALID_WORKFLOW_STATE',
-          title: 'Invalid State',
-          detail: 'Attachments can only be uploaded to DRAFT disclosures.'
-        });
-      }
+        record = {
+          attachmentId: row.out_attachment_id,
+          disclosureId: row.out_disclosure_id,
+          fileName: row.out_file_name,
+          fileSizeBytes: String(row.out_file_size_bytes),
+          mimeType: row.out_mime_type,
+          sha256Hash: row.out_sha256_hash,
+          storagePath: row.out_storage_path,
+          tokenId: row.out_token_id
+        };
+      } catch (dbErr: unknown) {
+        if (dbErr instanceof AppError) {
+          throw dbErr;
+        }
 
-      // Verify not already uploaded / scanned
-      if (record.scanStatus !== 'PENDING_SCAN') {
-        throw new AppError({
-          statusCode: 409,
-          code: 'DUPLICATE_UPLOAD',
-          title: 'Duplicate Upload',
-          detail: `Attachment has already been processed with status "${record.scanStatus}".`
-        });
+        const errRecord = (typeof dbErr === 'object' && dbErr !== null) ? (dbErr as Record<string, unknown>) : {};
+        const errMsg = typeof errRecord.message === 'string' ? errRecord.message : '';
+
+        if (errMsg.includes('FORBIDDEN') || errRecord.code === '42501' || errMsg.includes('insufficient_privilege')) {
+          throw new AppError({
+            statusCode: 403,
+            code: 'ATTACHMENT_FORBIDDEN',
+            title: 'Forbidden Access',
+            detail: 'Only the primary inventor may upload file content to this disclosure.'
+          });
+        }
+
+        if (errMsg.includes('INVALID_STATE')) {
+          throw new AppError({
+            statusCode: 422,
+            code: 'INVALID_WORKFLOW_STATE',
+            title: 'Invalid State',
+            detail: 'Attachments can only be uploaded to DRAFT disclosures.'
+          });
+        }
+
+        if (errMsg.includes('DUPLICATE_UPLOAD')) {
+          throw new AppError({
+            statusCode: 409,
+            code: 'DUPLICATE_UPLOAD',
+            title: 'Duplicate Upload',
+            detail: 'Attachment has already been processed.'
+          });
+        }
+
+        if (errMsg.includes('INVALID_SCAN_TOKEN')) {
+          throw new AppError({
+            statusCode: 422,
+            code: 'INVALID_SCAN_TOKEN',
+            title: 'Invalid Scan Token',
+            detail: errMsg.includes('already claimed')
+              ? 'Scan token is already claimed by an active upload in progress.'
+              : 'No active scan token found for this attachment. Token may have expired or already been consumed.'
+          });
+        }
+
+        if (errMsg.includes('NOT_FOUND') || errRecord.code === 'P0002') {
+          throw new AppError({
+            statusCode: 404,
+            code: 'RESOURCE_NOT_FOUND',
+            title: 'Resource Not Found',
+            detail: `Attachment "${attachmentId}" does not exist.`
+          });
+        }
+
+        throw dbErr;
       }
 
       // Verify File Extension & MIME Type
@@ -204,28 +248,6 @@ export function uploadAttachmentContentHandler(
         }
       }
 
-      // Retrieve Active Scan Token
-      const tokenResult = await dbPool.query<{
-        token_id: string;
-      }>(
-        `SELECT token_id
-         FROM public.attachment_scan_tokens
-         WHERE attachment_id = $1 AND status = 'ACTIVE' AND expires_at > clock_timestamp()
-         ORDER BY created_at DESC
-         LIMIT 1`,
-        [attachmentId]
-      );
-
-      const tokenRow = tokenResult.rows[0];
-      if (!tokenRow) {
-        throw new AppError({
-          statusCode: 422,
-          code: 'INVALID_SCAN_TOKEN',
-          title: 'Invalid Scan Token',
-          detail: 'No active scan token found for this attachment. Token may have expired or already been consumed.'
-        });
-      }
-
       // Trigger Antivirus Scan Pipeline
       if (!scannerService) {
         throw new AppError({
@@ -241,7 +263,7 @@ export function uploadAttachmentContentHandler(
 
       try {
         const scanRes = await scannerService.scanAndRecord({
-          tokenId: tokenRow.token_id,
+          tokenId: record.tokenId,
           attachmentId,
           sha256Hash: actualSha256,
           storagePath: record.storagePath,
@@ -277,6 +299,138 @@ export function uploadAttachmentContentHandler(
           : scanStatus === 'INFECTED'
             ? 'File uploaded to quarantine. Antivirus scanner flagged this file as infected.'
             : 'File uploaded to quarantine successfully.'
+      });
+    } catch (err: unknown) {
+      if (isDatabaseUnavailable(err)) {
+        return next(new AppError({
+          statusCode: 503,
+          code: 'DATABASE_UNAVAILABLE',
+          title: 'Database Unavailable',
+          detail: 'Database connection failed or service is temporarily unavailable.'
+        }));
+      }
+      next(err);
+    }
+  };
+}
+
+export function abandonAttachmentHandler(
+  dbPool?: Pool,
+  quarantineStorage?: IQuarantineStorageAdapter
+) {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      if (!dbPool) {
+        throw new AppError({
+          statusCode: 503,
+          code: 'DATABASE_UNAVAILABLE',
+          title: 'Database Unavailable',
+          detail: 'Database connection pool is not configured.'
+        });
+      }
+
+      if (!req.assertion) {
+        throw new AppError({
+          statusCode: 401,
+          code: 'BFF_ASSERTION_MISSING',
+          title: 'Missing Request Assertion',
+          detail: 'Verified request assertion is required to abandon an attachment.'
+        });
+      }
+
+      const attachmentId = req.params.id;
+      if (!attachmentId || !UUID_REGEX.test(attachmentId)) {
+        throw new AppError({
+          statusCode: 400,
+          code: 'VALIDATION_FAILED',
+          title: 'Validation Failed',
+          detail: 'Attachment identifier must be a valid UUID.'
+        });
+      }
+
+      // Execute database abandonment gateway
+      try {
+        await dbPool.query(
+          'SELECT public.abandon_attachment_v1($1::jsonb, $2::uuid)',
+          [JSON.stringify(req.assertion), attachmentId]
+        );
+      } catch (dbErr: unknown) {
+        const errRecord = (typeof dbErr === 'object' && dbErr !== null) ? (dbErr as Record<string, unknown>) : {};
+        const errMsg = typeof errRecord.message === 'string' ? errRecord.message : '';
+
+        if (errMsg.includes('FORBIDDEN') || errRecord.code === '42501' || errMsg.includes('insufficient_privilege')) {
+          throw new AppError({
+            statusCode: 403,
+            code: 'ATTACHMENT_FORBIDDEN',
+            title: 'Forbidden Access',
+            detail: 'Only the primary inventor may abandon an attachment for this disclosure.'
+          });
+        }
+
+        if (errMsg.includes('LOCK_CONFLICT') || errRecord.code === '55P03') {
+          throw new AppError({
+            statusCode: 409,
+            code: 'SCAN_IN_PROGRESS',
+            title: 'Scan In Progress',
+            detail: 'Attachment is actively being processed or scanned; cannot abandon while scan is in progress.'
+          });
+        }
+
+        if (errMsg.includes('INVALID_STATE')) {
+          if (errMsg.includes('CLEAN')) {
+            throw new AppError({
+              statusCode: 422,
+              code: 'ATTACHMENT_ALREADY_CLEAN',
+              title: 'Attachment Clean',
+              detail: 'Successfully scanned CLEAN attachments cannot be abandoned.'
+            });
+          }
+          if (errMsg.includes('already abandoned')) {
+            throw new AppError({
+              statusCode: 409,
+              code: 'ATTACHMENT_ALREADY_ABANDONED',
+              title: 'Already Abandoned',
+              detail: 'Attachment is already abandoned.'
+            });
+          }
+          throw new AppError({
+            statusCode: 422,
+            code: 'INVALID_WORKFLOW_STATE',
+            title: 'Invalid Workflow State',
+            detail: errMsg.replace(/^.*?INVALID_STATE:\s*/, '')
+          });
+        }
+
+        if (errMsg.includes('NOT_FOUND') || errRecord.code === 'P0002') {
+          throw new AppError({
+            statusCode: 404,
+            code: 'RESOURCE_NOT_FOUND',
+            title: 'Resource Not Found',
+            detail: `Attachment "${attachmentId}" does not exist.`
+          });
+        }
+
+        throw dbErr;
+      }
+
+      // Safe cleanup of quarantine storage object
+      if (quarantineStorage && typeof quarantineStorage.deleteQuarantineObject === 'function') {
+        try {
+          await quarantineStorage.deleteQuarantineObject(attachmentId);
+        } catch (cleanupErr: unknown) {
+          // Safe error absorption: quarantine storage failure does not fail the transaction
+          // Requirement: "Quarantine cleanup failures are handled safely"
+          if (process.env.NODE_ENV !== 'test') {
+            console.warn(`[Attachment] Quarantine cleanup failed for abandoned attachment ${attachmentId}:`, cleanupErr);
+          }
+        }
+      }
+
+      res.status(200).json({
+        success: true,
+        message: 'Attachment successfully abandoned. You may now register and upload a fresh copy.',
+        attachmentId,
+        scanStatus: 'ABANDONED'
       });
     } catch (err: unknown) {
       if (isDatabaseUnavailable(err)) {

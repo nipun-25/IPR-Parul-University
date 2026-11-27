@@ -176,22 +176,12 @@ describe('Stage 2G.2 — Attachment Upload & Quarantine Pipeline Endpoints', () 
         actorId: otherStudentId
       });
 
-      mockPool.query.mockResolvedValueOnce({
-        rows: [
-          {
-            attachmentId,
-            disclosureId,
-            fileName: 'doc.pdf',
-            fileSizeBytes: String(content.length),
-            mimeType: 'application/pdf',
-            sha256Hash: crypto.createHash('sha256').update(content).digest('hex'),
-            storagePath: 'disclosures/test.pdf',
-            scanStatus: 'PENDING_SCAN',
-            disclosureStatus: 'DRAFT',
-            primaryInventorId
-          }
-        ]
-      });
+      mockPool.query.mockRejectedValueOnce(
+        Object.assign(
+          new Error('FORBIDDEN: Only the primary inventor may upload file content to this disclosure'),
+          { code: '42501' }
+        )
+      );
 
       const res = await request(app)
         .post(`/api/v1/attachments/${attachmentId}/upload`)
@@ -209,22 +199,9 @@ describe('Stage 2G.2 — Attachment Upload & Quarantine Pipeline Endpoints', () 
         bodyBuffer: content
       });
 
-      mockPool.query.mockResolvedValueOnce({
-        rows: [
-          {
-            attachmentId,
-            disclosureId,
-            fileName: 'doc.pdf',
-            fileSizeBytes: String(content.length),
-            mimeType: 'application/pdf',
-            sha256Hash: crypto.createHash('sha256').update(content).digest('hex'),
-            storagePath: 'disclosures/test.pdf',
-            scanStatus: 'PENDING_SCAN',
-            disclosureStatus: 'SUBMITTED',
-            primaryInventorId
-          }
-        ]
-      });
+      mockPool.query.mockRejectedValueOnce(
+        new Error('INVALID_STATE: Attachments can only be uploaded to DRAFT disclosures (current: SUBMITTED)')
+      );
 
       const res = await request(app)
         .post(`/api/v1/attachments/${attachmentId}/upload`)
@@ -242,22 +219,9 @@ describe('Stage 2G.2 — Attachment Upload & Quarantine Pipeline Endpoints', () 
         bodyBuffer: content
       });
 
-      mockPool.query.mockResolvedValueOnce({
-        rows: [
-          {
-            attachmentId,
-            disclosureId,
-            fileName: 'doc.pdf',
-            fileSizeBytes: String(content.length),
-            mimeType: 'application/pdf',
-            sha256Hash: crypto.createHash('sha256').update(content).digest('hex'),
-            storagePath: 'disclosures/test.pdf',
-            scanStatus: 'CLEAN',
-            disclosureStatus: 'DRAFT',
-            primaryInventorId
-          }
-        ]
-      });
+      mockPool.query.mockRejectedValueOnce(
+        new Error('DUPLICATE_UPLOAD: Attachment has already been processed with status "CLEAN"')
+      );
 
       const res = await request(app)
         .post(`/api/v1/attachments/${attachmentId}/upload`)
@@ -278,16 +242,14 @@ describe('Stage 2G.2 — Attachment Upload & Quarantine Pipeline Endpoints', () 
       mockPool.query.mockResolvedValueOnce({
         rows: [
           {
-            attachmentId,
-            disclosureId,
-            fileName: 'malicious.exe',
-            fileSizeBytes: String(content.length),
-            mimeType: 'application/octet-stream',
-            sha256Hash: crypto.createHash('sha256').update(content).digest('hex'),
-            storagePath: 'disclosures/test.exe',
-            scanStatus: 'PENDING_SCAN',
-            disclosureStatus: 'DRAFT',
-            primaryInventorId
+            out_attachment_id: attachmentId,
+            out_disclosure_id: disclosureId,
+            out_file_name: 'malicious.exe',
+            out_file_size_bytes: String(content.length),
+            out_mime_type: 'application/octet-stream',
+            out_sha256_hash: crypto.createHash('sha256').update(content).digest('hex'),
+            out_storage_path: 'disclosures/test.exe',
+            out_token_id: tokenId
           }
         ]
       });
@@ -311,16 +273,14 @@ describe('Stage 2G.2 — Attachment Upload & Quarantine Pipeline Endpoints', () 
       mockPool.query.mockResolvedValueOnce({
         rows: [
           {
-            attachmentId,
-            disclosureId,
-            fileName: 'spec.pdf',
-            fileSizeBytes: String(actualContent.length),
-            mimeType: 'application/pdf',
-            sha256Hash: 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
-            storagePath: 'disclosures/test.pdf',
-            scanStatus: 'PENDING_SCAN',
-            disclosureStatus: 'DRAFT',
-            primaryInventorId
+            out_attachment_id: attachmentId,
+            out_disclosure_id: disclosureId,
+            out_file_name: 'spec.pdf',
+            out_file_size_bytes: String(actualContent.length),
+            out_mime_type: 'application/pdf',
+            out_sha256_hash: 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+            out_storage_path: 'disclosures/test.pdf',
+            out_token_id: tokenId
           }
         ]
       });
@@ -348,16 +308,14 @@ describe('Stage 2G.2 — Attachment Upload & Quarantine Pipeline Endpoints', () 
       mockPool.query.mockResolvedValueOnce({
         rows: [
           {
-            attachmentId,
-            disclosureId,
-            fileName: 'spec.pdf',
-            fileSizeBytes: String(content.length + 100),
-            mimeType: 'application/pdf',
-            sha256Hash: crypto.createHash('sha256').update(content).digest('hex'),
-            storagePath: 'disclosures/test.pdf',
-            scanStatus: 'PENDING_SCAN',
-            disclosureStatus: 'DRAFT',
-            primaryInventorId
+            out_attachment_id: attachmentId,
+            out_disclosure_id: disclosureId,
+            out_file_name: 'spec.pdf',
+            out_file_size_bytes: String(content.length + 100),
+            out_mime_type: 'application/pdf',
+            out_sha256_hash: crypto.createHash('sha256').update(content).digest('hex'),
+            out_storage_path: 'disclosures/test.pdf',
+            out_token_id: tokenId
           }
         ]
       });
@@ -373,33 +331,14 @@ describe('Stage 2G.2 — Attachment Upload & Quarantine Pipeline Endpoints', () 
 
     it('returns 422 INVALID_SCAN_TOKEN when active token is not found or expired', async () => {
       const content = Buffer.from('%PDF-1.4 clean document');
-      const hash = crypto.createHash('sha256').update(content).digest('hex');
       const headers = makeBffUploadHeaders({
         attachmentId,
         bodyBuffer: content
       });
 
-      mockPool.query
-        .mockResolvedValueOnce({
-          rows: [
-            {
-              attachmentId,
-              disclosureId,
-              fileName: 'spec.pdf',
-              fileSizeBytes: String(content.length),
-              mimeType: 'application/pdf',
-              sha256Hash: hash,
-              storagePath: 'disclosures/test.pdf',
-              scanStatus: 'PENDING_SCAN',
-              disclosureStatus: 'DRAFT',
-              primaryInventorId
-            }
-          ]
-        })
-        .mockResolvedValueOnce({
-          // token query returns empty
-          rows: []
-        });
+      mockPool.query.mockRejectedValueOnce(
+        new Error('INVALID_SCAN_TOKEN: No active scan token found for this attachment. Token may have expired or already been consumed')
+      );
 
       const res = await request(app)
         .post(`/api/v1/attachments/${attachmentId}/upload`)
@@ -418,26 +357,20 @@ describe('Stage 2G.2 — Attachment Upload & Quarantine Pipeline Endpoints', () 
         bodyBuffer: content
       });
 
-      mockPool.query
-        .mockResolvedValueOnce({
-          rows: [
-            {
-              attachmentId,
-              disclosureId,
-              fileName: 'spec.pdf',
-              fileSizeBytes: String(content.length),
-              mimeType: 'application/pdf',
-              sha256Hash: hash,
-              storagePath: 'disclosures/test.pdf',
-              scanStatus: 'PENDING_SCAN',
-              disclosureStatus: 'DRAFT',
-              primaryInventorId
-            }
-          ]
-        })
-        .mockResolvedValueOnce({
-          rows: [{ token_id: tokenId }]
-        });
+      mockPool.query.mockResolvedValueOnce({
+        rows: [
+          {
+            out_attachment_id: attachmentId,
+            out_disclosure_id: disclosureId,
+            out_file_name: 'spec.pdf',
+            out_file_size_bytes: String(content.length),
+            out_mime_type: 'application/pdf',
+            out_sha256_hash: hash,
+            out_storage_path: 'disclosures/test.pdf',
+            out_token_id: tokenId
+          }
+        ]
+      });
 
       mockScannerPool.query.mockResolvedValueOnce({ rows: [] });
 
@@ -470,26 +403,20 @@ describe('Stage 2G.2 — Attachment Upload & Quarantine Pipeline Endpoints', () 
         bodyBuffer: content
       });
 
-      mockPool.query
-        .mockResolvedValueOnce({
-          rows: [
-            {
-              attachmentId,
-              disclosureId,
-              fileName: 'infected.pdf',
-              fileSizeBytes: String(content.length),
-              mimeType: 'application/pdf',
-              sha256Hash: hash,
-              storagePath: 'disclosures/infected.pdf',
-              scanStatus: 'PENDING_SCAN',
-              disclosureStatus: 'DRAFT',
-              primaryInventorId
-            }
-          ]
-        })
-        .mockResolvedValueOnce({
-          rows: [{ token_id: tokenId }]
-        });
+      mockPool.query.mockResolvedValueOnce({
+        rows: [
+          {
+            out_attachment_id: attachmentId,
+            out_disclosure_id: disclosureId,
+            out_file_name: 'infected.pdf',
+            out_file_size_bytes: String(content.length),
+            out_mime_type: 'application/pdf',
+            out_sha256_hash: hash,
+            out_storage_path: 'disclosures/infected.pdf',
+            out_token_id: tokenId
+          }
+        ]
+      });
 
       mockScannerPool.query.mockResolvedValueOnce({ rows: [] });
 
@@ -527,16 +454,14 @@ describe('Stage 2G.2 — Attachment Upload & Quarantine Pipeline Endpoints', () 
       mockPool.query.mockResolvedValueOnce({
         rows: [
           {
-            attachmentId,
-            disclosureId,
-            fileName: 'spec.pdf',
-            fileSizeBytes: String(content.length),
-            mimeType: 'application/pdf',
-            sha256Hash: hash,
-            storagePath: 'disclosures/test.pdf',
-            scanStatus: 'PENDING_SCAN',
-            disclosureStatus: 'DRAFT',
-            primaryInventorId
+            out_attachment_id: attachmentId,
+            out_disclosure_id: disclosureId,
+            out_file_name: 'spec.pdf',
+            out_file_size_bytes: String(content.length),
+            out_mime_type: 'application/pdf',
+            out_sha256_hash: hash,
+            out_storage_path: 'disclosures/test.pdf',
+            out_token_id: tokenId
           }
         ]
       });
@@ -563,26 +488,20 @@ describe('Stage 2G.2 — Attachment Upload & Quarantine Pipeline Endpoints', () 
         bodyBuffer: content
       });
 
-      mockPool.query
-        .mockResolvedValueOnce({
-          rows: [
-            {
-              attachmentId,
-              disclosureId,
-              fileName: 'spec.pdf',
-              fileSizeBytes: String(content.length),
-              mimeType: 'application/pdf',
-              sha256Hash: hash,
-              storagePath: 'disclosures/test.pdf',
-              scanStatus: 'PENDING_SCAN',
-              disclosureStatus: 'DRAFT',
-              primaryInventorId
-            }
-          ]
-        })
-        .mockResolvedValueOnce({
-          rows: [{ token_id: tokenId }]
-        });
+      mockPool.query.mockResolvedValueOnce({
+        rows: [
+          {
+            out_attachment_id: attachmentId,
+            out_disclosure_id: disclosureId,
+            out_file_name: 'spec.pdf',
+            out_file_size_bytes: String(content.length),
+            out_mime_type: 'application/pdf',
+            out_sha256_hash: hash,
+            out_storage_path: 'disclosures/test.pdf',
+            out_token_id: tokenId
+          }
+        ]
+      });
 
       mockScannerPool.query.mockRejectedValueOnce(
         new Error('Scanner database connection aborted')

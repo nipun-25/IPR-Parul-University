@@ -66,4 +66,9 @@ export interface IQuarantineStorageAdapter {
    * Retrieves promoted approved object from approved bucket.
    */
   getApprovedObject(objectId: string): Promise<{ metadata: QuarantineObjectMetadata; content: Buffer } | null>;
+
+  /**
+   * Safely deletes an isolated quarantine object upon abandonment or failed upload cleanup.
+   */
+  deleteQuarantineObject?(objectId: string): Promise<void>;
 }

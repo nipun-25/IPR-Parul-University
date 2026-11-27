@@ -15,10 +15,11 @@ describe('Gate B1 SQL Migrations Static Verification', () => {
     '007_authentication.sql',
     '008_pidcs_partial_update.sql',
     '009_verification_resend.sql',
-    '010_disclosure_queries.sql'
+    '010_disclosure_queries.sql',
+    '011_consent_and_attachment_remediation.sql'
   ];
 
-  it('should contain all 10 required migration files in the expected order', () => {
+  it('should contain all 11 required migration files in the expected order', () => {
     const files = fs.readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort();
     expect(files).toEqual(expectedFiles);
   });
@@ -379,6 +380,51 @@ describe('Gate B1 SQL Migrations Static Verification', () => {
 
     // 4. Strict least privilege verification: no direct table grants
     expect(content).not.toMatch(/GRANT\s+(SELECT|INSERT|UPDATE|DELETE)\s+ON\s+TABLE/i);
+    expect(content).not.toMatch(/GRANT\s+ALL\s+ON\s+ALL\s+TABLES/i);
+  });
+
+  it('011_consent_and_attachment_remediation.sql: should define cancellation and attachment upload context gateways with least privilege', () => {
+    const content = fs.readFileSync(path.join(migrationsDir, '011_consent_and_attachment_remediation.sql'), 'utf-8');
+
+    // 1. Constraint expansion to CANCELLED and ABANDONED
+    expect(content).toContain('chk_inventor_consents_status');
+    expect(content).toContain("'CANCELLED'");
+    expect(content).toContain('chk_attachments_scan_status');
+    expect(content).toContain("'ABANDONED'");
+
+    // 2. Gateway functions
+    expect(content).toContain('FUNCTION public.cancel_consent_invitation_v1');
+    expect(content).toContain('FUNCTION public.get_attachment_upload_context_v1');
+    expect(content).toContain('FUNCTION public.abandon_attachment_v1');
+    expect(content).toContain('FUNCTION public.submit_initial_disclosure_v3');
+
+    // 3. Security context
+    expect(content).toContain('SECURITY DEFINER');
+    expect(content).toContain('SET search_path = pg_catalog, auth_internal, public, pg_temp');
+    expect(content).toContain("auth_internal.verify_and_consume_request_assertion_v1(p_assertion, 'OP_CANCEL_CONSENT_INVITATION')");
+    expect(content).toContain("auth_internal.verify_and_consume_request_assertion_v1(p_assertion, 'OP_UPLOAD_ATTACHMENT')");
+    expect(content).toContain("auth_internal.verify_and_consume_request_assertion_v1(p_assertion, 'OP_ABANDON_ATTACHMENT')");
+    expect(content).toContain("auth_internal.verify_and_consume_request_assertion_v1(p_assertion, 'OP_SUBMIT_DISCLOSURE')");
+
+    // 4. Ownership and grants
+    expect(content).toContain('ALTER FUNCTION public.cancel_consent_invitation_v1(JSONB, UUID) OWNER TO ipr_definer;');
+    expect(content).toContain('REVOKE ALL ON FUNCTION public.cancel_consent_invitation_v1(JSONB, UUID) FROM PUBLIC;');
+    expect(content).toContain('GRANT EXECUTE ON FUNCTION public.cancel_consent_invitation_v1(JSONB, UUID) TO ipr_app;');
+
+    expect(content).toContain('ALTER FUNCTION public.get_attachment_upload_context_v1(JSONB, UUID) OWNER TO ipr_definer;');
+    expect(content).toContain('REVOKE ALL ON FUNCTION public.get_attachment_upload_context_v1(JSONB, UUID) FROM PUBLIC;');
+    expect(content).toContain('GRANT EXECUTE ON FUNCTION public.get_attachment_upload_context_v1(JSONB, UUID) TO ipr_app;');
+
+    expect(content).toContain('ALTER FUNCTION public.abandon_attachment_v1(JSONB, UUID) OWNER TO ipr_definer;');
+    expect(content).toContain('REVOKE ALL ON FUNCTION public.abandon_attachment_v1(JSONB, UUID) FROM PUBLIC;');
+    expect(content).toContain('GRANT EXECUTE ON FUNCTION public.abandon_attachment_v1(JSONB, UUID) TO ipr_app;');
+
+    expect(content).toContain('ALTER FUNCTION public.submit_initial_disclosure_v3(JSONB, UUID) OWNER TO ipr_definer;');
+    expect(content).toContain('REVOKE ALL ON FUNCTION public.submit_initial_disclosure_v3(JSONB, UUID) FROM PUBLIC;');
+    expect(content).toContain('GRANT EXECUTE ON FUNCTION public.submit_initial_disclosure_v3(JSONB, UUID) TO ipr_app;');
+
+    // 5. Strict least privilege verification: no direct table grants to ipr_app
+    expect(content).not.toMatch(/GRANT\s+(SELECT|INSERT|UPDATE|DELETE)\s+ON\s+TABLE[^\n;]*TO\s+ipr_app/i);
     expect(content).not.toMatch(/GRANT\s+ALL\s+ON\s+ALL\s+TABLES/i);
   });
 

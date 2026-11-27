@@ -89,6 +89,12 @@ const BFF_ROUTE_WHITELIST: readonly RouteWhitelistRule[] = [
     mapToBackendPath: (m) => `/api/v1/attachments/${m[1]}/upload`
   },
   {
+    regex: /^\/attachments\/([a-zA-Z0-9-]+)\/abandon$/,
+    method: 'POST',
+    scope: 'OP_ABANDON_ATTACHMENT',
+    mapToBackendPath: (m) => `/api/v1/attachments/${m[1]}/abandon`
+  },
+  {
     regex: /^\/consent\/request$/,
     method: 'POST',
     scope: 'OP_CREATE_CONSENT',
@@ -105,6 +111,12 @@ const BFF_ROUTE_WHITELIST: readonly RouteWhitelistRule[] = [
     method: 'POST',
     scope: 'OP_REVOKE_CONSENT',
     mapToBackendPath: () => '/api/v1/consent/revoke'
+  },
+  {
+    regex: /^\/consent\/cancel$/,
+    method: 'POST',
+    scope: 'OP_CANCEL_CONSENT_INVITATION',
+    mapToBackendPath: () => '/api/v1/consent/cancel'
   },
   {
     regex: /^\/disclosures\/([a-zA-Z0-9-]+)\/assign-reviewer$/,

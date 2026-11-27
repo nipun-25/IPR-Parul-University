@@ -9,6 +9,8 @@ export const OPERATION_SCOPES = [
   'OP_CREATE_CONSENT',
   'OP_VERIFY_CONSENT',
   'OP_REVOKE_CONSENT',
+  'OP_CANCEL_CONSENT_INVITATION',
+  'OP_ABANDON_ATTACHMENT',
   'OP_ASSIGN_REVIEWER',
   'OP_REVIEW_EVALUATION',
   'OP_LEGAL_CLEARANCE',
@@ -74,6 +76,18 @@ export const OPERATION_SCOPE_REGISTRY: Record<OperationScope, ScopeDefinition> =
     permittedMethods: ['POST'],
     permittedRoles: ['Faculty', 'Student'],
     description: 'Revoke previously granted inventor consent by consenting inventor'
+  },
+  OP_CANCEL_CONSENT_INVITATION: {
+    scope: 'OP_CANCEL_CONSENT_INVITATION',
+    permittedMethods: ['POST'],
+    permittedRoles: ['Faculty', 'Student'],
+    description: 'Cancel pending consent invitation for co-inventor by primary inventor'
+  },
+  OP_ABANDON_ATTACHMENT: {
+    scope: 'OP_ABANDON_ATTACHMENT',
+    permittedMethods: ['POST'],
+    permittedRoles: ['Faculty', 'Student'],
+    description: 'Abandon an uncompleted, failed, or infected attachment upload by primary inventor'
   },
   OP_ASSIGN_REVIEWER: {
     scope: 'OP_ASSIGN_REVIEWER',
