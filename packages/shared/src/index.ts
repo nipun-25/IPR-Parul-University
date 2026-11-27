@@ -28,6 +28,7 @@ export * from './adapters/test-resource-authorization-provider.js';
 export * from './dtos/auth.dto.js';
 export * from './dtos/disclosure.dto.js';
 export * from './dtos/patent.dto.js';
+export * from './dtos/reporting.dto.js';
 
 // Types
 export * from './types/auth.types.js';

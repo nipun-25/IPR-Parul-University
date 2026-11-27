@@ -155,6 +155,36 @@ export function listDisclosuresHandler(dbPool?: Pool) {
         });
       }
 
+      const { q, search, status, reviewStatus, legalClearanceStatus } = req.query;
+      const searchTerm = (typeof q === 'string' && q.trim()) || (typeof search === 'string' && search.trim()) || null;
+      const statusFilter = (typeof status === 'string' && status.trim()) || null;
+      const reviewFilter = (typeof reviewStatus === 'string' && reviewStatus.trim()) || null;
+      const legalFilter = (typeof legalClearanceStatus === 'string' && legalClearanceStatus.trim()) || null;
+
+      if (!searchTerm && !statusFilter && !reviewFilter && !legalFilter) {
+        const result = await dbPool.query<DisclosureListItemDto>(
+          `SELECT
+            out_id AS id,
+            out_tracking_number AS "trackingNumber",
+            out_title AS title,
+            out_status AS status,
+            out_primary_inventor_id AS "primaryInventorId",
+            out_assigned_reviewer_id AS "assignedReviewerId",
+            out_review_status AS "reviewStatus",
+            out_legal_clearance_status AS "legalClearanceStatus",
+            out_created_at AS "createdAt",
+            out_updated_at AS "updatedAt"
+          FROM public.list_disclosures_v1($1::jsonb)`,
+          [JSON.stringify(req.assertion)]
+        );
+
+        res.status(200).json({
+          success: true,
+          disclosures: result.rows
+        });
+        return;
+      }
+
       const result = await dbPool.query<DisclosureListItemDto>(
         `SELECT
           out_id AS id,
@@ -167,8 +197,19 @@ export function listDisclosuresHandler(dbPool?: Pool) {
           out_legal_clearance_status AS "legalClearanceStatus",
           out_created_at AS "createdAt",
           out_updated_at AS "updatedAt"
-        FROM public.list_disclosures_v1($1::jsonb)`,
-        [JSON.stringify(req.assertion)]
+        FROM public.list_disclosures_v1($1::jsonb)
+        WHERE ($2::text IS NULL OR out_title ILIKE '%' || $2 || '%' OR out_tracking_number ILIKE '%' || $2 || '%')
+          AND ($3::text IS NULL OR out_status = $3)
+          AND ($4::text IS NULL OR out_review_status = $4)
+          AND ($5::text IS NULL OR out_legal_clearance_status = $5)
+        ORDER BY out_created_at DESC`,
+        [
+          JSON.stringify(req.assertion),
+          searchTerm,
+          statusFilter,
+          reviewFilter,
+          legalFilter
+        ]
       );
 
       res.status(200).json({

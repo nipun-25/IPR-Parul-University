@@ -61,29 +61,29 @@ export default function ReviewerAssignedPage() {
 
   const displayData: MockDisclosure[] = realDisclosures !== null
     ? realDisclosures.map((d) => ({
-        id: d.id,
-        trackingNumber: d.trackingNumber || 'DRAFT-PENDING',
-        title: d.title,
-        status: d.status as any,
-        fieldOfInvention: 'Assigned Research',
-        createdAt: d.createdAt,
-        updatedAt: d.updatedAt,
-        leadInventor: {
-          ...MOCK_USERS[0],
-          id: d.primaryInventorId,
-          name: `Inventor (${d.primaryInventorId.slice(0, 8)})`
-        },
-        department: 'Parul University',
-        commercialPotential: '',
-        priorArtDetails: '',
-        clarifications: [],
-        inventors: [],
-        abstract: '',
-        detailedDescription: '',
-        attachments: [],
-        reviewStatus: d.reviewStatus,
-        legalClearanceStatus: d.legalClearanceStatus
-      }))
+      id: d.id,
+      trackingNumber: d.trackingNumber || 'DRAFT-PENDING',
+      title: d.title,
+      status: d.status as any,
+      fieldOfInvention: 'Assigned Research',
+      createdAt: d.createdAt,
+      updatedAt: d.updatedAt,
+      leadInventor: {
+        ...MOCK_USERS[0],
+        id: d.primaryInventorId,
+        name: `Inventor (${d.primaryInventorId.slice(0, 8)})`
+      },
+      department: 'Parul University',
+      commercialPotential: '',
+      priorArtDetails: '',
+      clarifications: [],
+      inventors: [],
+      abstract: '',
+      detailedDescription: '',
+      attachments: [],
+      reviewStatus: d.reviewStatus,
+      legalClearanceStatus: d.legalClearanceStatus
+    }))
     : MOCK_DISCLOSURES;
 
   const columns = [

@@ -235,7 +235,9 @@ export interface DisclosureListItemDto {
   title: string;
   status: string;
   primaryInventorId: string;
+  assignedReviewerId: string | null;
   reviewStatus: string;
+  legalClearanceStatus: string;
   createdAt: string;
   updatedAt: string;
 }

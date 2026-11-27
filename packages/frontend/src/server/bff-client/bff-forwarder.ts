@@ -159,6 +159,18 @@ const BFF_ROUTE_WHITELIST: readonly RouteWhitelistRule[] = [
     method: 'GET',
     scope: 'OP_VIEW_DISCLOSURE',
     mapToBackendPath: (m) => `/api/v1/patents/${m[1]}`
+  },
+  {
+    regex: /^\/reports\/summary$/,
+    method: 'GET',
+    scope: 'OP_VIEW_DISCLOSURE',
+    mapToBackendPath: () => '/api/v1/reports/summary'
+  },
+  {
+    regex: /^\/reports\/export\/disclosures\.csv$/,
+    method: 'GET',
+    scope: 'OP_VIEW_DISCLOSURE',
+    mapToBackendPath: () => '/api/v1/reports/export/disclosures.csv'
   }
 ];
 

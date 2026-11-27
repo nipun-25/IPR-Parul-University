@@ -36,6 +36,10 @@ import {
   recordPatentStageTransitionHandler,
   getPatentApplicationHandler
 } from './controllers/legal.controller.js';
+import {
+  getReportingSummaryHandler,
+  exportDisclosuresCsvHandler
+} from './controllers/reporting.controller.js';
 import { AntivirusScannerService } from './services/scanner.service.js';
 import { createAuthRouter } from './routes/auth.routes.js';
 import { EmailService } from './services/email.service.js';
@@ -253,6 +257,10 @@ export function createApp(env: BackendEnv, options?: CreateAppOptions): Express 
   protectedApiRouter.post('/patents', createPatentApplicationHandler(options?.dbPool));
   protectedApiRouter.post('/patents/:id/stage-transition', recordPatentStageTransitionHandler(options?.dbPool));
   protectedApiRouter.get('/patents/:id', getPatentApplicationHandler(options?.dbPool));
+
+  // Reporting & Role-Enforced CSV Export (Gate P2 Step 5)
+  protectedApiRouter.get('/reports/summary', getReportingSummaryHandler(options?.dbPool));
+  protectedApiRouter.get('/reports/export/disclosures.csv', exportDisclosuresCsvHandler(options?.dbPool));
 
   // Public Authentication Endpoints (Registration & Email Verification - Gate P2 Stage 2F)
   let csrfSecret: string;
