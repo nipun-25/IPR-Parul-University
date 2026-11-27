@@ -6,6 +6,7 @@ import {
   RevokeConsentSchema,
   CancelConsentInvitationSchema,
   VerifyConsentSchema,
+  AssignReviewerSchema,
   DisclosureListItemDto,
   InventorConsentItemDto,
   AttachmentItemDto
@@ -848,6 +849,108 @@ export function verifyConsentHandler(dbPool?: Pool) {
           code: 'DATABASE_UNAVAILABLE',
           title: 'Database Unavailable',
           detail: 'Database connection failed or service is temporarily unavailable.'
+        }));
+      }
+
+      next(err);
+    }
+  };
+}
+
+export function assignDisclosureReviewerHandler(dbPool?: Pool) {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      if (!dbPool) {
+        throw new AppError({
+          statusCode: 503,
+          code: 'DATABASE_UNAVAILABLE',
+          title: 'Database Unavailable',
+          detail: 'Database connection pool is not configured.'
+        });
+      }
+
+      if (!req.assertion) {
+        throw new AppError({
+          statusCode: 401,
+          code: 'BFF_ASSERTION_MISSING',
+          title: 'Missing Request Assertion',
+          detail: 'Verified request assertion is required to invoke database gateway.'
+        });
+      }
+
+      const disclosureId = req.params.id;
+      if (!disclosureId || !UUID_REGEX.test(disclosureId)) {
+        throw new AppError({
+          statusCode: 400,
+          code: 'VALIDATION_FAILED',
+          title: 'Validation Failed',
+          detail: 'Disclosure identifier must be a valid UUID.'
+        });
+      }
+
+      const parseResult = AssignReviewerSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        throw new AppError({
+          statusCode: 400,
+          code: 'VALIDATION_FAILED',
+          title: 'Validation Failed',
+          detail: parseResult.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ')
+        });
+      }
+
+      const { reviewerId } = parseResult.data;
+
+      await dbPool.query(
+        'SELECT public.assign_disclosure_reviewer_v1($1::jsonb, $2::uuid, $3::uuid)',
+        [JSON.stringify(req.assertion), disclosureId, reviewerId]
+      );
+
+      res.status(200).json({
+        success: true,
+        message: 'Reviewer successfully assigned to disclosure.',
+        disclosureId,
+        reviewerId
+      });
+    } catch (err: unknown) {
+      if (isDatabaseUnavailable(err)) {
+        return next(new AppError({
+          statusCode: 503,
+          code: 'DATABASE_UNAVAILABLE',
+          title: 'Database Unavailable',
+          detail: 'Database connection failed or service is temporarily unavailable.'
+        }));
+      }
+
+      const errRecord = (typeof err === 'object' && err !== null) ? (err as Record<string, unknown>) : {};
+      const errMsg = typeof errRecord.message === 'string' ? errRecord.message : '';
+
+      if (errMsg.includes('FORBIDDEN') || errRecord.code === '42501' || errMsg.includes('insufficient_privilege')) {
+        const isTargetReviewer = errMsg.includes('Reviewer') && (errMsg.includes('does not possess') || errMsg.includes('role'));
+        return next(new AppError({
+          statusCode: 403,
+          code: isTargetReviewer ? 'INVALID_REVIEWER_ROLE' : 'ADMIN_FORBIDDEN',
+          title: isTargetReviewer ? 'Invalid Reviewer Role' : 'Forbidden Operation',
+          detail: isTargetReviewer
+            ? 'Target user must possess the Reviewer role and be in ACTIVE status.'
+            : 'Only institutional Administrators may assign disclosure reviewers.'
+        }));
+      }
+
+      if (errMsg.includes('INVALID_STATE')) {
+        return next(new AppError({
+          statusCode: 422,
+          code: 'INVALID_WORKFLOW_STATE',
+          title: 'Invalid State',
+          detail: errMsg.replace(/^[^:]*:\s*/, '') || 'Reviewers can only be assigned to SUBMITTED or APPROVED disclosures.'
+        }));
+      }
+
+      if (errMsg.includes('NOT_FOUND') || errRecord.code === 'P0002') {
+        return next(new AppError({
+          statusCode: 404,
+          code: 'RESOURCE_NOT_FOUND',
+          title: 'Resource Not Found',
+          detail: `Disclosure "${req.params.id}" does not exist.`
         }));
       }
 

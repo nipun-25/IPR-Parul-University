@@ -209,6 +209,19 @@ export const VerifyConsentSchema = z.object({
 
 export type VerifyConsentDto = z.infer<typeof VerifyConsentSchema>;
 
+export const AssignReviewerSchema = z.object({
+  reviewerId: z.string().uuid()
+}).strict();
+
+export type AssignReviewerDto = z.infer<typeof AssignReviewerSchema>;
+
+export interface AssignReviewerResponseDto {
+  success: boolean;
+  message: string;
+  disclosureId: string;
+  reviewerId: string;
+}
+
 export interface DisclosureListItemDto {
   id: string;
   trackingNumber: string | null;

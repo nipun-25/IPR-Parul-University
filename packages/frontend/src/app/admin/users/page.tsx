@@ -6,7 +6,7 @@ import { PortalShell } from '../../../components/layout/PortalShell';
 import { DataTable } from '../../../components/ui/DataTable';
 import { StatusBadge } from '../../../components/ui/StatusBadge';
 import { MOCK_USERS, type MockUser } from '../../../data/mock-portal-data';
-import { Users, Plus, Shield, CheckCircle2 } from 'lucide-react';
+import { Users, Plus, Shield, CheckCircle2, AlertCircle } from 'lucide-react';
 
 export default function AdminUsersPage() {
   const columns = [
@@ -63,17 +63,32 @@ export default function AdminUsersPage() {
       title="Institutional User Directory"
       subtitle="Complete register of authenticated students, faculty researchers, reviewers and legal officers"
     >
-      <DataTable
-        columns={columns}
-        data={MOCK_USERS}
-        rowKey={(u) => u.id}
-        searchPlaceholder="Search users by name, email or department..."
-        searchFilter={(u, q) =>
-          u.name.toLowerCase().includes(q) ||
-          u.email.toLowerCase().includes(q) ||
-          u.department.toLowerCase().includes(q)
-        }
-      />
+      <div className="space-y-4">
+        {/* Missing Gateway Notice */}
+        <div className="flex items-center justify-between p-3.5 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-800">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>
+              <strong>Gateway Status (Pending Migration):</strong> Institutional user directory listing and administrative user provisioning gateways (<code>list_portal_users_v1</code>, <code>admin_provision_user_v1</code>) are pending formal database migration approval. Showing demonstration directory.
+            </span>
+          </div>
+          <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded font-mono text-[10px] font-bold">
+            PREVIEW / PENDING GATEWAY
+          </span>
+        </div>
+
+        <DataTable
+          columns={columns}
+          data={MOCK_USERS}
+          rowKey={(u) => u.id}
+          searchPlaceholder="Search users by name, email or department..."
+          searchFilter={(u, q) =>
+            u.name.toLowerCase().includes(q) ||
+            u.email.toLowerCase().includes(q) ||
+            u.department.toLowerCase().includes(q)
+          }
+        />
+      </div>
     </PortalShell>
   );
 }

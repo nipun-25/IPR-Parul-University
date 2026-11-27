@@ -23,7 +23,8 @@ import {
   createConsentRequestHandler,
   revokeConsentHandler,
   cancelConsentInvitationHandler,
-  verifyConsentHandler
+  verifyConsentHandler,
+  assignDisclosureReviewerHandler
 } from './controllers/disclosure.controller.js';
 import {
   uploadAttachmentContentHandler,
@@ -237,6 +238,9 @@ export function createApp(env: BackendEnv, options?: CreateAppOptions): Express 
   protectedApiRouter.post('/consent/revoke', revokeConsentHandler(options?.dbPool));
   protectedApiRouter.post('/consent/cancel', cancelConsentInvitationHandler(options?.dbPool));
   protectedApiRouter.post('/consent/verify', verifyConsentHandler(options?.dbPool));
+
+  // Reviewer Assignment (Administrator - Gate P2 Stage 2G.4)
+  protectedApiRouter.post('/disclosures/:id/assign-reviewer', assignDisclosureReviewerHandler(options?.dbPool));
 
   // Public Authentication Endpoints (Registration & Email Verification - Gate P2 Stage 2F)
   let csrfSecret: string;
